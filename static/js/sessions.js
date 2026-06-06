@@ -1714,6 +1714,9 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
 
 // Pending session — stored locally until the first message is sent
 let _pendingChat = null; // { url, modelId, endpointId }
+// Agent to bind when the pending chat materializes (null = default assistant).
+// Lets the agent picker work on a brand-new chat before a DB session exists.
+let _pendingCrewId = null;
 
 export function createDirectChat(url, modelId, endpointId) {
   _sessionNavToken++;
@@ -1730,6 +1733,7 @@ export function createDirectChat(url, modelId, endpointId) {
 
   // Don't hit the API — just store the model info and prepare the UI
   _pendingChat = { url, modelId, endpointId };
+  _pendingCrewId = null; // a brand-new chat starts on the default assistant
   _skipAutoSelect = true;
   currentSessionId = null;
   Storage.remove('lastSessionId');
@@ -1769,6 +1773,10 @@ export function createDirectChat(url, modelId, endpointId) {
   // Enable input
   const msgInput = document.getElementById('message');
   if (msgInput) { msgInput.disabled = false; msgInput.value = ''; msgInput.focus(); }
+
+  // Reflect the new (pending) chat in the active-agent chip — shows the default
+  // assistant (or a pending pick) instead of leaving it blank in agent mode.
+  try { window.agentsModule?.onSessionSwitch?.(null); } catch {}
 }
 
 /** Actually create the session in the DB. Called on first message send. */
@@ -1792,6 +1800,12 @@ export async function materializePendingSession() {
   if (pending.endpointId) {
     fd.append('endpoint_id', pending.endpointId);
   }
+  // Bind the agent the user picked on the new-chat screen, so the session is
+  // born already assigned (the deferred equivalent of the PATCH-on-pick flow).
+  if (_pendingCrewId) {
+    fd.append('crew_member_id', _pendingCrewId);
+  }
+  _pendingCrewId = null; // consumed for this session
 
   let res;
   try {
@@ -1833,6 +1847,25 @@ export async function materializePendingSession() {
 
 export function hasPendingChat() { return !!_pendingChat; }
 export function getPendingChat() { return _pendingChat; }
+export function getPendingCrewId() { return _pendingCrewId; }
+export function setPendingCrewId(id) { _pendingCrewId = id || null; }
+
+/**
+ * Pick an agent for a not-yet-created chat. Ensures a pending chat exists (so the
+ * binding is actually applied when the first message materializes the session),
+ * then records the chosen agent. crewId null/'' = default assistant.
+ */
+export async function bindPendingAgent(crewId) {
+  if (!_pendingChat && !currentSessionId) {
+    try {
+      const dc = await (await fetch(`${API_BASE}/api/default-chat`)).json();
+      if (dc && dc.endpoint_url && dc.model) {
+        createDirectChat(dc.endpoint_url, dc.model, dc.endpoint_id);
+      }
+    } catch (_) { /* no default chat configured — binding still recorded below */ }
+  }
+  _pendingCrewId = crewId || null; // set AFTER createDirectChat (which resets it)
+}
 // Getters for external access
 export function getCurrentSessionId() {
   return currentSessionId;
@@ -3033,6 +3066,9 @@ const sessionModule = {
   materializePendingSession,
   hasPendingChat,
   getPendingChat,
+  getPendingCrewId,
+  setPendingCrewId,
+  bindPendingAgent,
   getCurrentSessionId,
   getSessions,
   getCurrentModel,

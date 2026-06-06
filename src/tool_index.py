@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 ALWAYS_AVAILABLE = frozenset({
     "bash", "python", "web_search", "web_fetch", "read_file",
     "api_call",  # For configured integrations (Miniflux, Gitea, Linkding, etc.)
+    # "remember this" / "save to memory" is ambient — it isn't in any keyword
+    # hint set, so without this it's purely RAG-gated and can genuinely be
+    # missing the turn the user asks to save something (the agent then refuses
+    # with "the memory tool isn't available"). Agent rules direct user facts here.
+    "manage_memory",
     # The two genuinely AMBIENT cookbook tools — "what's running" and
     # "kill it" can be asked any time without prior cookbook context,
     # and need to survive typos. The other cookbook tools (downloads,

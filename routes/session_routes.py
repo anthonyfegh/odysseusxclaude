@@ -315,7 +315,9 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         # Switch (or clear) the agent bound to this conversation. "" = unbind.
         if crew_member_id is not None:
             _new_crew_id = None
-            if crew_member_id.strip():
+            # "", "__default__", "none" all mean: unbind back to the default assistant.
+            _cid = crew_member_id.strip()
+            if _cid and _cid.lower() not in ("__default__", "none", "default"):
                 from src import crew_service as _cs
                 _dbk = SessionLocal()
                 try:

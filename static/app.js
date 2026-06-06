@@ -1572,6 +1572,8 @@ function initializeEventListeners() {
       // Slide the pill to the active button
       const toggle = agentBtn.closest('.mode-toggle');
       if (toggle) toggle.classList.toggle('mode-chat', mode === 'chat');
+      // Show/hide the default-assistant chip to match the mode (agent only).
+      try { window.agentsModule?.onSessionSwitch?.(window.sessionModule?.getCurrentSessionId?.() || null); } catch (_) {}
       // Delay tool glow-up for a staggered effect
       setTimeout(() => applyModeToToggles(mode), 500);
     }

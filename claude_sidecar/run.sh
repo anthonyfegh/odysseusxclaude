@@ -11,6 +11,13 @@ cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export CLAUDE_SIDECAR_PORT="${CLAUDE_SIDECAR_PORT:-8750}"
 export CLAUDE_SIDECAR_DEFAULT_MODEL="${CLAUDE_SIDECAR_DEFAULT_MODEL:-claude-sonnet-4-6}"
 
+# Optional behaviour knobs (defaults are sensible; override only if you need to):
+#   CLAUDE_SIDECAR_NATIVE_TOOLS  Claude's own native tools enabled as a read-only
+#       fallback. Default "Read,Glob,Grep,WebSearch,WebFetch,Skill". Set to "" for
+#       the old pure-reasoning mode (Odysseus owns every tool, Claude has none).
+#   CLAUDE_SIDECAR_PREAMBLE      "1" (default) prepends the Odysseus runtime preamble
+#       (identity + tool priority + host-plugin-leak neutralisation). "0" disables it.
+
 # Absolute path to the `claude` CLI. Auto-detected from your PATH (works for any
 # install: npm global, the official installer, nvm). Override CLAUDE_BIN only if
 # yours lives somewhere unusual.

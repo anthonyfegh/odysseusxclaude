@@ -638,7 +638,7 @@ function _hideAgentChip() {
 // chats keep the old preset behavior; everything else uses agent binding.
 export async function onSessionSwitch(sessionId) {
   _ensureStyles();
-  if (!sessionId) { _hideAgentChip(); return; }
+  if (!sessionId) { _syncAgentChipForNew(); return; }
   try {
     const map = JSON.parse(localStorage.getItem('odysseus-char-sessions') || '{}');
     if (map && map[sessionId]) {
@@ -651,9 +651,54 @@ export async function onSessionSwitch(sessionId) {
   _syncAgentChip(sessionId);
 }
 
-async function _syncAgentChip(sessionId) {
+// Is the composer in Agent mode? The default-assistant chip only shows there —
+// in plain Chat mode the agent concept is hidden.
+function _isAgentMode() {
+  try { return (JSON.parse(localStorage.getItem('odysseus-toggles') || '{}').mode || 'chat') === 'agent'; }
+  catch { return false; }
+}
+
+// Render the chip as a specific bound agent. pickerSessionId is what the chip's
+// click hands to the picker (null for a new/pending chat — bind via pending).
+function _renderAgentChip(agent, pickerSessionId) {
   const btn = document.getElementById('agent-indicator-btn');
   if (!btn) return;
+  const av = document.getElementById('agent-indicator-avatar');
+  const nm = document.getElementById('agent-indicator-name');
+  if (av) { av.textContent = _initial(agent); av.style.background = _colorFor(agent); }
+  if (nm) { nm.textContent = agent.name; nm.style.maxWidth = '90px'; }
+  btn.style.display = '';
+  btn.title = `Agent: ${agent.name} — click to switch`;
+  btn.onclick = () => openAgentPicker(pickerSessionId || null);
+}
+
+// Render the chip as the (unbound) default assistant — still clickable to pick.
+function _renderDefaultAssistantChip(pickerSessionId) {
+  const btn = document.getElementById('agent-indicator-btn');
+  if (!btn) return;
+  const av = document.getElementById('agent-indicator-avatar');
+  const nm = document.getElementById('agent-indicator-name');
+  if (av) { av.textContent = '★'; av.style.background = '#5b5b58'; }
+  if (nm) { nm.textContent = 'Default assistant'; nm.style.maxWidth = '130px'; }
+  btn.style.display = '';
+  btn.title = 'Default assistant — click to choose an agent';
+  btn.onclick = () => openAgentPicker(pickerSessionId || null);
+}
+
+// Single source of truth for the chip: a bound agent shows that agent; unbound
+// shows the default assistant in agent mode, and hides in chat mode.
+async function _renderChip(crewId, pickerSessionId) {
+  const btn = document.getElementById('agent-indicator-btn');
+  if (!btn) return;
+  if (crewId) {
+    const agent = (await _agentList()).find(a => a.id === crewId);
+    if (agent) { _renderAgentChip(agent, pickerSessionId); return; }
+  }
+  if (_isAgentMode()) _renderDefaultAssistantChip(pickerSessionId);
+  else _hideAgentChip();
+}
+
+async function _syncAgentChip(sessionId) {
   let crewId = _sessionCrewId(sessionId);
   if (crewId === undefined) {
     // Not in the loaded session list yet (e.g. just created) — ask the backend.
@@ -662,16 +707,14 @@ async function _syncAgentChip(sessionId) {
       crewId = (await r.json()).crew_member_id || null;
     } catch { crewId = null; }
   }
-  if (!crewId) { _hideAgentChip(); return; }
-  const agent = (await _agentList()).find(a => a.id === crewId);
-  if (!agent) { _hideAgentChip(); return; }
-  const av = document.getElementById('agent-indicator-avatar');
-  const nm = document.getElementById('agent-indicator-name');
-  if (av) { av.textContent = _initial(agent); av.style.background = _colorFor(agent); }
-  if (nm) nm.textContent = agent.name;
-  btn.style.display = '';
-  btn.title = `Agent: ${agent.name} — click to switch`;
-  btn.onclick = () => openAgentPicker(sessionId);
+  _renderChip(crewId || null, sessionId);
+}
+
+// New/pending chat (no DB session yet): reflect the pending agent pick, or the
+// default assistant. Click binds via the pending mechanism in sessions.js.
+function _syncAgentChipForNew() {
+  const pendingId = window.sessionModule?.getPendingCrewId?.() || null;
+  _renderChip(pendingId, null);
 }
 
 function _positionPop(pop, anchor, below) {
@@ -728,9 +771,13 @@ function _openTemplateMenu(anchor) {
 export async function openAgentPicker(sessionId) {
   _ensureStyles();
   sessionId = sessionId || window.sessionModule?.getCurrentSessionId?.();
-  if (!sessionId) { uiModule.showToast('Open a chat first'); return; }
+  // No DB session yet (a brand-new chat) — bind through the pending mechanism so
+  // the session is born already assigned. No more "Open a chat first".
+  const isNew = !sessionId;
   const agents = await _agentList(true);
-  const curId = _sessionCrewId(sessionId) || null;
+  const curId = isNew
+    ? (window.sessionModule?.getPendingCrewId?.() || null)
+    : (_sessionCrewId(sessionId) || null);
   document.querySelectorAll('.agent-picker-pop').forEach(p => p.remove());
   const pop = document.createElement('div');
   pop.className = 'agent-picker-pop';
@@ -753,10 +800,21 @@ export async function openAgentPicker(sessionId) {
   pop.querySelectorAll('.agent-picker-row').forEach(row => {
     row.addEventListener('click', async () => {
       close();
-      const id = row.dataset.id;
+      const id = row.dataset.id; // "" = default assistant
       try {
+        if (isNew) {
+          // No session yet — record the pick; it's applied when the first
+          // message materializes the session.
+          await window.sessionModule?.bindPendingAgent?.(id || null);
+          _syncAgentChipForNew();
+          uiModule.showToast(id ? 'Agent set for this chat' : 'Using default assistant');
+          return;
+        }
         const fd = new FormData();
-        fd.append('crew_member_id', id);
+        // Default assistant row has data-id="" — send an explicit sentinel so it
+        // reaches the server as a value (an empty form field arrives as None and
+        // the unbind is silently skipped).
+        fd.append('crew_member_id', id || '__default__');
         const res = await fetch(`${API}/api/session/${sessionId}`, { method: 'PATCH', body: fd });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (window.sessionModule?.loadSessions) await window.sessionModule.loadSessions();

@@ -257,6 +257,23 @@ def setup_chat_routes(
         active_doc_id = form_data.get("active_doc_id", "").strip()
         logger.info(f"[doc-inject] chat_mode={chat_mode}, active_doc_id={active_doc_id!r}")
 
+        # New-chat first message: the session was created in a separate request a
+        # moment ago. If that read hasn't propagated yet (e.g. a pooled DB
+        # connection's stale snapshot under load), get_session would raise KeyError
+        # and we'd hard-404 — silently dropping the user's very first message.
+        # Wait the race out with a short, non-blocking retry instead. A session
+        # that genuinely doesn't exist still 404s below once the window elapses.
+        _sid_for_warm = session or (body.get("session") if isinstance(body, dict) else None)
+        if _sid_for_warm:
+            for _warm in range(5):
+                try:
+                    session_manager.get_session(_sid_for_warm)
+                    break
+                except KeyError:
+                    if _warm == 4:
+                        break
+                    await asyncio.sleep(0.05)
+
         try:
             # Attachment-only sends: skip the message-required check when the
             # user has attached one or more files (the attachment IS the action).
