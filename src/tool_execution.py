@@ -253,24 +253,61 @@ def _build_mcp_args(tool: str, content: str) -> Dict:
     return parser(content) if parser else {}
 
 
+# Argument keys that carry a filesystem path on the standard MCP "filesystem"
+# server (read_file, write_file, edit_file, list_directory, move_file, …).
+_FS_PATH_KEYS = ("path", "paths", "file", "filename", "directory", "dir", "source", "destination")
+
+
+def _confine_mcp_args(tool_name: str, args: Any, workspace_root: Optional[str]) -> tuple:
+    """Defense-in-depth: when an agent has a workspace, confine the path
+    arguments of any filesystem MCP tool to that folder before the call reaches
+    an external MCP server (the in-process _direct_fallback path is already
+    confined). Returns (args, error_dict_or_None). Only filesystem-named tools
+    (leaf contains "file"/"director") are touched, so non-fs MCP tools that
+    happen to carry a "path" arg are left alone."""
+    if not workspace_root or not isinstance(args, dict):
+        return args, None
+    leaf = str(tool_name).split("__")[-1].lower()
+    if "file" not in leaf and "director" not in leaf:
+        return args, None
+    from src.agent_workspace import resolve_in_workspace, WorkspaceEscape
+    out = dict(args)
+    for k, v in list(out.items()):
+        if k.lower() not in _FS_PATH_KEYS:
+            continue
+        try:
+            if isinstance(v, str):
+                out[k] = resolve_in_workspace(workspace_root, v)
+            elif isinstance(v, list):
+                out[k] = [resolve_in_workspace(workspace_root, p) if isinstance(p, str) else p for p in v]
+        except WorkspaceEscape:
+            return args, {"error": f"{tool_name}: {v}: outside the agent workspace", "exit_code": 1}
+    return out, None
+
+
 async def _call_mcp_tool(
     tool: str,
     content: str,
     progress_cb: Optional[Callable[[Dict], Awaitable[None]]] = None,
+    workspace_root: Optional[str] = None,
 ) -> Dict:
     """Route a legacy tool call through the MCP manager, with direct fallbacks."""
     mcp = get_mcp_manager()
     if not mcp:
-        return await _direct_fallback(tool, content, progress_cb=progress_cb) or {"error": f"MCP manager not available for tool '{tool}'", "exit_code": 1}
+        return await _direct_fallback(tool, content, progress_cb=progress_cb, workspace_root=workspace_root) or {"error": f"MCP manager not available for tool '{tool}'", "exit_code": 1}
 
     server_id, tool_name = _MCP_TOOL_MAP[tool]
     qualified = f"mcp__{server_id}__{tool_name}"
     args = _build_mcp_args(tool, content)
+    # Confine filesystem path args if this agent runs in a sandbox folder.
+    args, _ws_err = _confine_mcp_args(qualified, args, workspace_root)
+    if _ws_err:
+        return _ws_err
     result = await mcp.call_tool(qualified, args)
 
     # If MCP server not connected, try direct fallback
     if isinstance(result, dict) and result.get("exit_code") == 1 and "not connected" in result.get("error", ""):
-        fallback = await _direct_fallback(tool, content, progress_cb=progress_cb)
+        fallback = await _direct_fallback(tool, content, progress_cb=progress_cb, workspace_root=workspace_root)
         if fallback:
             return fallback
 
@@ -297,6 +334,7 @@ async def _direct_fallback(
     tool: str,
     content: str,
     progress_cb: Optional[Callable[[Dict], Awaitable[None]]] = None,
+    workspace_root: Optional[str] = None,
 ) -> Optional[Dict]:
     """In-process execution path for the eight tools that used to live as
     stdio MCP servers under mcp_servers/. Those servers were deleted in
@@ -331,6 +369,7 @@ async def _direct_fallback(
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=_subproc_env,
+                cwd=workspace_root or None,
             )
             stdout, stderr, rc, timed_out = await _run_subprocess_streaming(
                 proc,
@@ -357,6 +396,7 @@ async def _direct_fallback(
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=_subproc_env,
+                cwd=workspace_root or None,
             )
             stdout, stderr, rc, timed_out = await _run_subprocess_streaming(
                 proc,
@@ -376,6 +416,12 @@ async def _direct_fallback(
             path = content.split("\n", 1)[0].strip()
             if not path:
                 return {"error": "read_file: path required", "exit_code": 1}
+            if workspace_root:
+                from src.agent_workspace import resolve_in_workspace, WorkspaceEscape
+                try:
+                    path = resolve_in_workspace(workspace_root, path)
+                except WorkspaceEscape:
+                    return {"error": f"read_file: {path}: outside the agent workspace", "exit_code": 1}
             try:
                 # Run blocking read in a thread to keep the loop responsive
                 def _read():
@@ -399,6 +445,12 @@ async def _direct_fallback(
             body = lines[1] if len(lines) > 1 else ""
             if not path:
                 return {"error": "write_file: path required", "exit_code": 1}
+            if workspace_root:
+                from src.agent_workspace import resolve_in_workspace, WorkspaceEscape
+                try:
+                    path = resolve_in_workspace(workspace_root, path)
+                except WorkspaceEscape:
+                    return {"error": f"write_file: {path}: outside the agent workspace", "exit_code": 1}
             try:
                 def _write():
                     import os
@@ -538,6 +590,7 @@ async def execute_tool_block(
     disabled_tools: Optional[set] = None,
     owner: Optional[str] = None,
     progress_cb: Optional[Callable[[Dict], Awaitable[None]]] = None,
+    workspace_root: Optional[str] = None,
 ) -> Tuple[str, Dict]:
     """Execute a single tool block. Returns (description, result_dict).
 
@@ -625,7 +678,7 @@ async def execute_tool_block(
         _is_bg, _bg_cmd = _split_bg_marker(content)
         if _is_bg and _bg_cmd:
             from src import bg_jobs
-            rec = bg_jobs.launch(_bg_cmd, session_id=session_id)
+            rec = bg_jobs.launch(_bg_cmd, session_id=session_id, cwd=workspace_root or None)
             short = _bg_cmd.strip().split(chr(10))[0][:80]
             desc = f"bash (background): {short}"
             result = {
@@ -647,11 +700,11 @@ async def execute_tool_block(
     if tool in _MCP_TOOL_MAP:
         first_line = content.split(chr(10))[0][:80]
         desc = f"{tool}: {first_line}"
-        result = await _call_mcp_tool(tool, content, progress_cb=progress_cb)
+        result = await _call_mcp_tool(tool, content, progress_cb=progress_cb, workspace_root=workspace_root)
     elif tool == "create_document":
         title = content.split("\n")[0].strip()[:60]
         desc = f"create_document: {title}"
-        result = await do_create_document(content, session_id=session_id)
+        result = await do_create_document(content, session_id=session_id, workspace_root=workspace_root)
     elif tool == "update_document":
         desc = f"update_document: {content.split(chr(10))[0][:60]}"
         result = await do_update_document(content)
@@ -777,7 +830,9 @@ async def execute_tool_block(
             except (json.JSONDecodeError, TypeError):
                 args = {}
             desc = f"mcp: {tool}"
-            result = await mcp.call_tool(tool, args)
+            # Confine filesystem path args to the agent's sandbox folder.
+            args, _ws_err = _confine_mcp_args(tool, args, workspace_root)
+            result = _ws_err if _ws_err else await mcp.call_tool(tool, args)
         else:
             desc = f"mcp: {tool}"
             result = {"error": "MCP manager not available", "exit_code": 1}

@@ -62,7 +62,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
     SESSIONS_FILE = config.get("SESSIONS_FILE")
     
     @router.get("/sessions")
-    def list_sessions(request: Request):
+    def list_sessions(request: Request, crew_member_id: str = None):
         user = get_current_user(request)
         # Lazy purge: incognito sessions are ephemeral by design — wipe leftovers
         # from the DB and session_manager so they vanish on the next page refresh.
@@ -109,9 +109,11 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             last_msg_map = {}
             mode_map = {}
             msg_count_map = {}
-            rows = db.query(DbSession.id, DbSession.folder, DbSession.total_input_tokens, DbSession.total_output_tokens, DbSession.is_important, DbSession.created_at, DbSession.updated_at, DbSession.last_message_at, DbSession.mode, DbSession.message_count).filter(DbSession.archived == False).all()
+            crew_map = {}
+            rows = db.query(DbSession.id, DbSession.folder, DbSession.total_input_tokens, DbSession.total_output_tokens, DbSession.is_important, DbSession.created_at, DbSession.updated_at, DbSession.last_message_at, DbSession.mode, DbSession.message_count, DbSession.crew_member_id).filter(DbSession.archived == False).all()
             for row in rows:
                 folder_map[row.id] = row.folder
+                crew_map[row.id] = row.crew_member_id
                 token_map[row.id] = (row.total_input_tokens or 0) + (row.total_output_tokens or 0)
                 important_map[row.id] = row.is_important or False
                 created_map[row.id] = row.created_at.isoformat() if row.created_at else None
@@ -153,10 +155,12 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                      "has_documents": s.id in doc_session_ids,
                      "has_images": s.id in img_session_ids,
                      "mode": mode_map.get(s.id),
-                     "message_count": msg_count_map.get(s.id, 0)}
+                     "message_count": msg_count_map.get(s.id, 0),
+                     "crew_member_id": crew_map.get(s.id)}
                     for s in user_sessions.values()
                     if not s.archived
-                    and (s.name or "").strip() not in ("Nobody", "Incognito")]
+                    and (s.name or "").strip() not in ("Nobody", "Incognito")
+                    and (not crew_member_id or crew_map.get(s.id) == crew_member_id)]
 
         return sessions
     
@@ -170,8 +174,35 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         skip_validation: str = Form(None),
         api_key: str = Form(""),
         endpoint_id: str = Form(""),
+        crew_member_id: str = Form(""),
     ):
         skip_val = str(skip_validation).lower() == "true"
+
+        # Bind this new chat to an agent (crew): default endpoint/model from the
+        # agent — which points at the configured sidecar — when the caller didn't
+        # specify one, and trust it (no /v1/models probe). The conversation then
+        # runs as that agent (persona/model/tools) via the chat-binding seam.
+        _bind_crew = None
+        if crew_member_id and crew_member_id.strip():
+            from src import crew_service as _cs
+            _dbk = SessionLocal()
+            try:
+                _bind_crew = _cs.find_agent(_dbk, crew_member_id.strip(), get_current_user(request))
+            finally:
+                _dbk.close()
+            if not _bind_crew:
+                raise HTTPException(404, "Agent not found")
+            if not endpoint_url:
+                endpoint_url = _bind_crew.endpoint_url or ""
+                if not model:
+                    model = _bind_crew.model or ""
+            if not endpoint_url:
+                from src.endpoint_resolver import resolve_endpoint
+                _u, _m, _h = resolve_endpoint("default", owner=get_current_user(request))
+                endpoint_url = _u or ""
+                if not model:
+                    model = _m or ""
+            skip_val = True
 
         if not endpoint_url and not skip_val:
             raise HTTPException(400, "endpoint_url is required (choose from /api/models)")
@@ -248,6 +279,16 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             webhook_manager.fire_and_forget("session.created", {
                 "session_id": sid, "name": session.name, "model": model_to_use,
             })
+        # Persist the agent binding on the session row.
+        if _bind_crew:
+            _dbc = SessionLocal()
+            try:
+                _row = _dbc.query(DbSession).filter(DbSession.id == sid).first()
+                if _row:
+                    _row.crew_member_id = _bind_crew.id
+                    _dbc.commit()
+            finally:
+                _dbc.close()
         # Fire event for automation tasks
         from src.event_bus import fire_event
         fire_event("session_created", user)
@@ -263,7 +304,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         request: Request, sid: str,
         name: str = Form(None), folder: str = Form(None),
         model: str = Form(None), endpoint_url: str = Form(None),
-        endpoint_id: str = Form(None),
+        endpoint_id: str = Form(None), crew_member_id: str = Form(None),
     ):
         _verify_session_owner(request, sid)
         try:
@@ -271,6 +312,29 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         except KeyError:
             raise HTTPException(404, f"Session {sid} not found")
         result = {"id": sid}
+        # Switch (or clear) the agent bound to this conversation. "" = unbind.
+        if crew_member_id is not None:
+            _new_crew_id = None
+            if crew_member_id.strip():
+                from src import crew_service as _cs
+                _dbk = SessionLocal()
+                try:
+                    _crew = _cs.find_agent(_dbk, crew_member_id.strip(), get_current_user(request))
+                finally:
+                    _dbk.close()
+                if not _crew:
+                    raise HTTPException(404, "Agent not found")
+                _new_crew_id = _crew.id
+            _dbb = SessionLocal()
+            try:
+                _row = _dbb.query(DbSession).filter(DbSession.id == sid).first()
+                if _row:
+                    _row.crew_member_id = _new_crew_id
+                    _row.updated_at = datetime.utcnow()
+                    _dbb.commit()
+                    result["crew_member_id"] = _new_crew_id
+            finally:
+                _dbb.close()
         if name is not None:
             session_manager.update_session_name(sid, name)
             result["name"] = name

@@ -1479,10 +1479,11 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
         history.replaceState(null, '', '#' + id);
       }
     }
-    // Restore character preset for persistent chats
+    // Sync the active-agent chip (and, for legacy persistent-character chats,
+    // delegate to presets internally).
     try {
-      const presetsModule = window.presetsModule || (await import('./presets.js')).default;
-      if (presetsModule && presetsModule.onSessionSwitch) presetsModule.onSessionSwitch(id);
+      const agentsModule = window.agentsModule || (await import('./agents.js')).default;
+      if (agentsModule && agentsModule.onSessionSwitch) agentsModule.onSessionSwitch(id);
     } catch (e) {}
     const meta = sessions.find(s => s.id === id);
 

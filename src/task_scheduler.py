@@ -608,6 +608,8 @@ class TaskScheduler:
             # previous llm/research run's model. The executors set it once the
             # model is resolved.
             self._last_run_model = None
+            self._last_run_steps = None
+            self._last_run_tool_results = None
             try:
                 if task_type == "action":
                     result, success = await self._execute_action(task, run_id=run_id)
@@ -621,12 +623,19 @@ class TaskScheduler:
                     run.result = result
                 else:
                     # LLM task — use agent loop for tool access
-                    result = await self._execute_llm_task(task, db)
+                    result = await self._execute_llm_task(task, db, run_id=run_id)
                     run.status = "success"
                     run.result = result
                 # Record which model actually ran (resolved inside the executor).
                 if getattr(self, "_last_run_model", None):
                     run.model = self._last_run_model
+                # Persist the captured step timeline (live events are also
+                # broadcast via task_run_live during the run).
+                if getattr(self, "_last_run_steps", None):
+                    try:
+                        run.steps = json.dumps(self._last_run_steps)
+                    except Exception:
+                        pass
                 if run.status == "success":
                     await self._deliver_task_result(task, result, db, model=getattr(self, "_last_run_model", None))
             except TaskDeferred as defer:
@@ -1171,7 +1180,7 @@ class TaskScheduler:
             override_user_message=context,
         )
 
-    async def _execute_llm_task(self, task, db) -> str:
+    async def _execute_llm_task(self, task, db, run_id: str | None = None) -> str:
         """Execute an LLM task with full tool access via the agent loop."""
         from core.database import Session as DbSession, ChatMessage, CrewMember
 
@@ -1199,7 +1208,9 @@ class TaskScheduler:
         # which model actually produced the output).
         self._last_run_model = model
 
-        # Ensure a session exists for output
+        # Ensure a session exists for output. Bind it to the agent so anything
+        # produced in the run (documents, images, research) is attributed to it
+        # in the Workspace.
         session_id = task.session_id
         if not session_id:
             session_id = str(uuid.uuid4())
@@ -1209,6 +1220,7 @@ class TaskScheduler:
                 endpoint_url=endpoint_url,
                 model=model,
                 owner=task.owner,
+                crew_member_id=(crew.id if crew else None),
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
             )
@@ -1220,6 +1232,15 @@ class TaskScheduler:
                     self._session_manager.sessions[session_id] = self._session_manager._db_to_session(sess)
                 except Exception:
                     pass
+        elif crew:
+            # Back-fill the agent link on a pre-existing task session.
+            try:
+                _s = db.query(DbSession).filter(DbSession.id == session_id).first()
+                if _s is not None and not getattr(_s, "crew_member_id", None):
+                    _s.crew_member_id = crew.id
+                    db.commit()
+            except Exception:
+                pass
 
         # For assistant check-ins: call each tool directly and post results
         # as separate messages. More reliable than hoping the model calls tools.
@@ -1246,6 +1267,13 @@ class TaskScheduler:
         except Exception:
             time_str = datetime.utcnow().strftime("%A, %B %d %Y, %H:%M UTC")
         system_prompt = f"Current time: {time_str}\n\n{system_prompt}"
+
+        # Guidance the task teacher wrote after a prior run gave up — steers the
+        # agent on how to actually complete this task with its real tools.
+        if getattr(task, "learned_guidance", None):
+            system_prompt += ("\n\nLEARNED GUIDANCE (a previous run initially failed; "
+                              "follow this approach and complete the task autonomously):\n"
+                              + str(task.learned_guidance).strip())
 
         # Compute tool filter from CrewMember.enabled_tools if set
         disabled_tools = None
@@ -1274,13 +1302,29 @@ class TaskScheduler:
         except Exception as e:
             logger.warning(f"[assistant] RAG tool selection failed, using all: {e}")
 
+        # The agent works in its own on-disk sandbox folder: write_file/
+        # read_file are confined to it and bash/python run with it as cwd.
+        _workspace_root = None
+        if crew:
+            try:
+                from src.agent_workspace import workspace_root as _agent_workspace_root
+                _workspace_root = _agent_workspace_root(crew.id)
+            except Exception as _e:
+                logger.warning(f"[task] workspace root failed for crew {getattr(crew, 'id', '?')}: {_e}")
+
         # Try using the agent loop for full tool access
         try:
             result = await self._run_agent_loop(
                 endpoint_url, model, task, session_id,
                 system_prompt=system_prompt, disabled_tools=disabled_tools,
                 relevant_tools=relevant_tools,
+                workspace_root=_workspace_root,
+                run_id=run_id,
             )
+        except asyncio.CancelledError:
+            # User stopped the task — let cancellation propagate to the outer
+            # handler (which marks the run aborted), never the fallback path.
+            raise
         except Exception as e:
             logger.warning(f"Agent loop failed for task '{task.name}', falling back to simple call: {e}")
             from src.llm_core import llm_call_async
@@ -1300,7 +1344,99 @@ class TaskScheduler:
         except Exception:
             pass
 
+        # Task teacher: if this run gave up, Opus 4.8 (via the sidecar) rewrites
+        # the approach and re-runs so the task actually delivers — this run.
+        try:
+            improved = await self._maybe_task_teacher(
+                task, db, result, system_prompt, session_id,
+                disabled_tools, _workspace_root,
+            )
+            if improved is not None:
+                result = improved
+        except asyncio.CancelledError:
+            raise
+        except Exception as _tt_err:
+            logger.warning(f"[task-teacher] escalation failed for '{task.name}': {_tt_err}")
+
         return result
+
+    async def _maybe_task_teacher(self, task, db, result, system_prompt, session_id,
+                                 disabled_tools, workspace_root):
+        """If the task run gave up, escalate to the teacher (Opus 4.8 via the
+        `claude -p` sidecar): get fresh guidance, re-run the task as the teacher
+        with the agent's full enabled toolset, persist the guidance for next time,
+        and return the new result. Returns None to leave the original result.
+
+        Routes ONLY through the sidecar; if it's unavailable the teacher helper
+        returns None and we skip (never a direct API)."""
+        from src.settings import get_setting
+        if not get_setting("task_teacher_enabled", True):
+            return None
+        from src.teacher_escalation import evaluate_turn_regex, task_teacher_guidance
+        status, reason = evaluate_turn_regex(getattr(self, "_last_run_tool_results", None) or [], result or "")
+        if status != "failure":
+            return None
+        logger.info(f"[task-teacher] '{task.name}' gave up ({reason}); escalating to the sidecar teacher")
+
+        # The tools the teacher (and re-run) actually have: the agent's enabled
+        # set (everything not disabled), so the teacher can tell it to use them.
+        try:
+            from src.tool_index import BUILTIN_TOOL_DESCRIPTIONS
+            names = sorted(set(BUILTIN_TOOL_DESCRIPTIONS.keys()) - set(disabled_tools or set()))
+            tools_desc = "\n".join(f"- {n}: {BUILTIN_TOOL_DESCRIPTIONS.get(n, '')}" for n in names) or "(standard toolset)"
+        except Exception:
+            tools_desc = "(standard toolset)"
+
+        teacher_model = (get_setting("task_teacher_model", "claude-opus-4-8") or "claude-opus-4-8").strip()
+        guidance = await task_teacher_guidance(
+            task_prompt=task.prompt or "",
+            available_tools_desc=tools_desc,
+            failed_result=result or "",
+            failure_reason=reason or "",
+            tool_results=getattr(self, "_last_run_tool_results", None) or [],
+            teacher_model=teacher_model,
+        )
+        if not guidance:
+            return None  # sidecar unavailable or teacher declined → keep original
+
+        # Resolve Opus 4.8 on the sidecar for the re-run.
+        from src.endpoint_resolver import resolve_endpoint_by_id
+        from src.teacher_escalation import SIDECAR_ENDPOINT_ID
+        resolved = resolve_endpoint_by_id(SIDECAR_ENDPOINT_ID, teacher_model)
+        if not resolved:
+            return None
+        t_url, t_model, _t_headers = resolved
+
+        guidance_block = ("\n\nTEACHER GUIDANCE — follow this to complete the task now, "
+                          "using your tools, without asking the user anything:\n" + guidance)
+        # Re-run as the teacher: full enabled toolset (relevant_tools=None, not the
+        # student's RAG-narrowed set that hid web_search); run_id=None so we don't
+        # wipe the student run's live timeline.
+        new_result = await self._run_agent_loop(
+            t_url, t_model, task, session_id,
+            system_prompt=system_prompt + guidance_block,
+            disabled_tools=disabled_tools, relevant_tools=None,
+            workspace_root=workspace_root, run_id=None,
+        )
+        try:
+            from src.text_helpers import strip_think
+            new_result = strip_think(new_result or "", prose=True, prompt_echo=True).strip() or new_result
+        except Exception:
+            pass
+
+        # Persist the guidance for future runs — but only if the re-run actually
+        # delivered (don't bake in guidance that still gives up).
+        try:
+            re_status, _ = evaluate_turn_regex(getattr(self, "_last_run_tool_results", None) or [], new_result or "")
+            if re_status != "failure":
+                task.learned_guidance = guidance
+                db.commit()
+                logger.info(f"[task-teacher] '{task.name}' recovered; saved learned guidance for next time")
+            else:
+                logger.info(f"[task-teacher] '{task.name}' re-run still weak; not persisting guidance")
+        except Exception as _e:
+            logger.warning(f"[task-teacher] persist guidance failed: {_e}")
+        return new_result
 
     async def _deliver_task_result(self, task, result: str, db, model: str = None):
         """Deliver a completed task result according to output_target.
@@ -1452,9 +1588,12 @@ class TaskScheduler:
                               system_prompt: str | None = None,
                               disabled_tools: set | None = None,
                               relevant_tools: set | None = None,
-                              override_user_message: str | None = None) -> str:
+                              override_user_message: str | None = None,
+                              workspace_root: str | None = None,
+                              run_id: str | None = None) -> str:
         """Run the full agent loop with tool access, collecting the final text."""
         from src.agent_loop import stream_agent_loop
+        from src import task_run_live
 
         system_content = system_prompt or "You are a helpful assistant executing a scheduled task. Use available tools to complete the task thoroughly."
         user_content = override_user_message or task.prompt
@@ -1481,6 +1620,18 @@ class TaskScheduler:
             pass
         full_text = ""
         tool_results = []
+        # Structured timeline captured for live streaming (task_run_live) and
+        # durable replay (persisted to TaskRun.steps by _execute_task_locked).
+        steps: list = []
+        _MAX_STEPS = 2000
+
+        def _cap(s, n):
+            if not isinstance(s, str):
+                try:
+                    s = json.dumps(s)
+                except Exception:
+                    s = str(s)
+            return s if len(s) <= n else s[:n] + "…"
 
         # Honor per-task max_steps (defense against runaway agent loops).
         # Falls back to 20 if not set — the historical default.
@@ -1494,31 +1645,100 @@ class TaskScheduler:
             _task_fallbacks = resolve_utility_fallback_candidates()
         except Exception:
             _task_fallbacks = []
-        async for event_str in stream_agent_loop(
-            endpoint_url=endpoint_url,
-            model=model,
-            messages=messages,
-            max_rounds=_task_max_rounds,
-            session_id=session_id,
-            owner=task.owner,
-            headers=headers,
-            disabled_tools=disabled_tools,
-            relevant_tools=relevant_tools,
-            fallbacks=_task_fallbacks,
-        ):
-            if event_str.startswith("data: ") and not event_str.startswith("data: [DONE]"):
+
+        if run_id:
+            try:
+                task_run_live.open_run(run_id)
+            except Exception:
+                pass
+        _run_status = "done"
+        try:
+            async for event_str in stream_agent_loop(
+                endpoint_url=endpoint_url,
+                model=model,
+                messages=messages,
+                max_rounds=_task_max_rounds,
+                session_id=session_id,
+                owner=task.owner,
+                headers=headers,
+                disabled_tools=disabled_tools,
+                relevant_tools=relevant_tools,
+                fallbacks=_task_fallbacks,
+                workspace_root=workspace_root,
+                # Suppress the CHAT teacher hook on task runs — its teacher
+                # `delta` events would otherwise be appended into full_text and
+                # corrupt run.result. Task runs use their own teacher path
+                # (_maybe_task_teacher in _execute_llm_task).
+                _is_teacher_run=True,
+            ):
+                # Live broadcast (best-effort; never breaks the run). The final
+                # [DONE] is emitted by task_run_live.close_run instead.
+                if run_id and not event_str.startswith("data: [DONE]"):
+                    task_run_live.publish(run_id, event_str)
+                if event_str.startswith("data: ") and not event_str.startswith("data: [DONE]"):
+                    try:
+                        data = json.loads(event_str[6:])
+                        # Capture text from all event types, not just delta
+                        if "delta" in data:
+                            full_text += data["delta"]
+                        elif data.get("type") == "tool_output":
+                            # Tool results — capture summary so we have SOMETHING even
+                            # if the model never produces a final text response
+                            tool_summary = data.get("stdout") or data.get("output") or data.get("result") or ""
+                            if isinstance(tool_summary, str) and tool_summary.strip():
+                                tool_results.append(f"[{data.get('tool', '?')}] {tool_summary[:500]}")
+                        # Structured step timeline (coalesce consecutive deltas).
+                        if len(steps) < _MAX_STEPS:
+                            _t = data.get("type")
+                            if "delta" in data:
+                                _k = "thinking" if data.get("thinking") else "text"
+                                if steps and steps[-1].get("k") == _k:
+                                    steps[-1]["text"] = _cap((steps[-1].get("text") or "") + data["delta"], 8000)
+                                else:
+                                    steps.append({"k": _k, "text": _cap(data["delta"], 8000)})
+                            elif _t == "tool_start":
+                                steps.append({"k": "tool_start", "tool": data.get("tool"),
+                                              "command": _cap(data.get("command") or "", 2000),
+                                              "round": data.get("round")})
+                            elif _t == "tool_output":
+                                _out = data.get("stdout") or data.get("output") or data.get("result") or ""
+                                steps.append({"k": "tool_output", "tool": data.get("tool"),
+                                              "output": _cap(_out, 2000),
+                                              "exit_code": data.get("exit_code"),
+                                              "round": data.get("round")})
+                            elif _t == "agent_step":
+                                steps.append({"k": "agent_step", "round": data.get("round")})
+                            elif _t == "web_sources":
+                                _srcs = data.get("sources") or data.get("data") or []
+                                steps.append({"k": "web_sources",
+                                              "count": len(_srcs) if isinstance(_srcs, list) else 0})
+                            elif _t in ("doc_stream_open", "doc_update"):
+                                steps.append({"k": "document",
+                                              "title": data.get("title") or data.get("name")})
+                            elif _t == "metrics":
+                                steps.append({"k": "metrics", "data": data.get("data")})
+                    except (json.JSONDecodeError, KeyError):
+                        pass
+        except asyncio.CancelledError:
+            _run_status = "stopped"
+            raise
+        except Exception:
+            _run_status = "error"
+            raise
+        finally:
+            self._last_run_steps = steps
+            # Reconstruct a dict-shaped tool-results list (what evaluate_turn_regex
+            # expects) from the captured steps, for give-up detection by the task
+            # teacher. exit_code != 0 → an errored tool call.
+            self._last_run_tool_results = [
+                {"tool": s.get("tool"), "output": s.get("output"),
+                 "error": (s.get("exit_code") not in (0, None))}
+                for s in steps if s.get("k") == "tool_output"
+            ]
+            if run_id:
                 try:
-                    data = json.loads(event_str[6:])
-                    # Capture text from all event types, not just delta
-                    if "delta" in data:
-                        full_text += data["delta"]
-                    elif data.get("type") == "tool_output":
-                        # Tool results — capture summary so we have SOMETHING even
-                        # if the model never produces a final text response
-                        tool_summary = data.get("stdout") or data.get("output") or data.get("result") or ""
-                        if isinstance(tool_summary, str) and tool_summary.strip():
-                            tool_results.append(f"[{data.get('tool', '?')}] {tool_summary[:500]}")
-                except (json.JSONDecodeError, KeyError):
+                    task_run_live.close_run(run_id, _run_status)
+                except Exception:
                     pass
 
         # Grace summarization — if the model exhausted rounds on tool calls
@@ -2021,6 +2241,27 @@ class TaskScheduler:
             await self.ensure_assistant_defaults(owner)
         except Exception as e:
             logger.warning(f"Failed to seed assistant for {owner}: {e}")
+        # Attribute any still-unassigned tasks (the built-in housekeeping seeded
+        # above, plus any pre-existing ones) to the default assistant, so every
+        # task and its activity belongs to an agent rather than "no assigned agent".
+        try:
+            from core.database import SessionLocal, ScheduledTask
+            from src import crew_service as _cs
+            _db2 = SessionLocal()
+            try:
+                _aid = _cs.default_assistant_id(_db2, owner)
+                if _aid:
+                    n = _db2.query(ScheduledTask).filter(
+                        ScheduledTask.owner == owner,
+                        ScheduledTask.crew_member_id.is_(None),
+                    ).update({ScheduledTask.crew_member_id: _aid}, synchronize_session=False)
+                    if n:
+                        _db2.commit()
+                        logger.info("Attributed %s unassigned task(s) for %s to the default assistant", n, owner)
+            finally:
+                _db2.close()
+        except Exception as e:
+            logger.warning(f"Failed to attribute unassigned tasks for {owner}: {e}")
 
     async def ensure_assistant_defaults(self, owner: str):
         """Create the personal-assistant CrewMember, its pinned session, and three

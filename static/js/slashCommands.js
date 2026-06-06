@@ -1211,7 +1211,7 @@ async function _cmdOpen(args, ctx) {
     const targets = {
       gallery: ['tool-gallery-btn', 'rail-gallery'],
       notes: ['tool-notes-btn', 'rail-notes'],
-      tasks: ['tool-tasks-btn', 'rail-tasks'],
+      tasks: ['agent-nav-tasks', 'rail-tasks'],
       library: ['tool-library-btn', 'rail-archive'],
       archive: ['tool-library-btn', 'rail-archive'],
       research: ['tool-research-btn', 'rail-research'],
@@ -3824,7 +3824,7 @@ async function _cmdTourBrain(args, ctx) {
 async function _openTasksForTour() {
   let modal = document.getElementById('tasks-modal');
   if (!modal) {
-    const opener = document.getElementById('tool-tasks-btn') || document.getElementById('rail-tasks');
+    const opener = document.getElementById('agent-nav-tasks') || document.getElementById('rail-tasks');
     if (opener) opener.click();
     for (let i = 0; i < 25; i++) {
       await new Promise(r => setTimeout(r, 80));

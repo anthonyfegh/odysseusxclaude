@@ -85,6 +85,11 @@ DEFAULT_SETTINGS = {
     "utility_model_fallbacks": [],
     "teacher_model": "",
     "teacher_enabled": False,
+    # Task teacher: when a scheduled task's run gives up, escalate to Opus 4.8
+    # via the claude -p sidecar to rewrite the approach + re-run it. Separate
+    # from the chat teacher above; default ON. Model is the sidecar model id.
+    "task_teacher_enabled": True,
+    "task_teacher_model": "claude-opus-4-8",
     # Skills: minimum self-reported confidence for an auto-written (LLM-authored)
     # DRAFT skill to be injected into the agent prompt. Published skills always
     # qualify. Keeps low-confidence auto-skills out of context until they're

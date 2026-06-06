@@ -132,15 +132,14 @@ function _focusSkillRow(name) {
 // Used by the chat anchor-link delegate ([name](#skill-<name>)).
 export function openSkill(name) {
   _pendingFocusSkill = name || null;
-  // Open the memory modal if not already open.
-  const memBtn = document.getElementById('tool-memory-btn');
-  if (memBtn) memBtn.click();
-  // Switch to the skills tab (triggers lazy loadSkills()).
-  setTimeout(() => {
-    const tab = document.querySelector('.memory-tab[data-memory-tab="skills"]');
-    if (tab) tab.click();
-    else loadSkills();  // fallback if tab structure differs
-  }, 120);
+  // Skills now live in the Agent hub (Soul/Tasks/Skills/Activity). Open it on
+  // the Skills sub-tab, which portals the skills panel in and calls loadSkills().
+  if (window.tasksModule?.openTasks) {
+    window.tasksModule.openTasks(null, 'skills');
+  } else {
+    document.getElementById('agent-nav-skills')?.click();
+    setTimeout(() => loadSkills(), 150);
+  }
 }
 
 let _skillsSort = 'confidence';

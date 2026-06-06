@@ -16,6 +16,8 @@ MEMORY_DOC = os.path.join(DATA_DIR, "memory_doc.md")
 PERSONAL_DIR = os.path.join(DATA_DIR, "personal_docs")
 RUNBOOK_DIR = os.path.join(PERSONAL_DIR, "runbook")
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
+# Per-agent on-disk workspace/sandbox roots: data/agents/<crew_member_id>/
+AGENT_WORKSPACES_DIR = os.path.join(DATA_DIR, "agents")
 FEATURES_FILE = os.path.join(DATA_DIR, "features.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 

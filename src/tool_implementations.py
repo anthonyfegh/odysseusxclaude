@@ -171,7 +171,35 @@ def _coerce_email_document_content(existing: str, incoming: str) -> str:
     return header.rstrip() + "\n---\n" + body
 
 
-async def do_create_document(content_block: str, session_id: Optional[str] = None) -> Dict:
+_DOC_EXT = {
+    "python": ".py", "javascript": ".js", "typescript": ".ts", "html": ".html",
+    "css": ".css", "json": ".json", "yaml": ".yaml", "sql": ".sql",
+    "bash": ".sh", "shell": ".sh", "markdown": ".md", "email": ".md", "text": ".txt",
+}
+
+
+def _mirror_document_to_workspace(workspace_root: str, title: str, content: str, language: str) -> None:
+    """Write a copy of an agent-created document into its workspace folder so it
+    shows up in the Workspace → Files browser. Best-effort; never raises."""
+    if not workspace_root:
+        return
+    try:
+        import os as _os
+        import re as _re
+        from src.agent_workspace import resolve_in_workspace
+        slug = _re.sub(r"[^a-zA-Z0-9._-]+", "-", (title or "document")).strip("-").lower() or "document"
+        ext = _DOC_EXT.get((language or "").lower(), ".md")
+        path = resolve_in_workspace(workspace_root, f"documents/{slug}{ext}")
+        _os.makedirs(_os.path.dirname(path), exist_ok=True)
+        body = content if (content or "").lstrip().startswith("#") else f"# {title}\n\n{content}"
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(body)
+    except Exception as _e:
+        logger.debug(f"document workspace mirror failed: {_e}")
+
+
+async def do_create_document(content_block: str, session_id: Optional[str] = None,
+                             workspace_root: Optional[str] = None) -> Dict:
     """Create a new document. Supports two formats:
       1) Line-based: line 1 = title, line 2 (optional) = language, rest = content
       2) XML-like tags: <title>...</title><language>...</language><content>...</content>
@@ -263,6 +291,9 @@ async def do_create_document(content_block: str, session_id: Optional[str] = Non
         db.add(doc)
         db.add(ver)
         db.commit()
+
+        # Mirror into the agent's on-disk workspace so it appears in Files.
+        _mirror_document_to_workspace(workspace_root, title, content, language)
 
         set_active_document(doc_id)
         try:
@@ -2380,7 +2411,10 @@ async def do_manage_calendar(content: str, owner: Optional[str] = None) -> Dict:
 # Cookbook routes loopback. The agent's tool calls run in-process but
 # need to reach admin-gated cookbook routes; we ride the per-process
 # internal token so require_admin lets us through. See core/middleware.py.
-_COOKBOOK_BASE = "http://localhost:7000"
+# Internal loopback base for agent tools that call Odysseus's own API (research,
+# gallery, contact resolve, cookbook). Defaults to 7000 (Docker/normal), but on
+# macOS the app runs on 7860 (AirPlay holds 7000), so set ODYSSEUS_INTERNAL_BASE.
+_COOKBOOK_BASE = os.environ.get("ODYSSEUS_INTERNAL_BASE", "http://localhost:7000")
 
 
 def _internal_headers(owner: Optional[str] = None) -> Dict[str, str]:
@@ -3601,7 +3635,7 @@ async def do_edit_image(content: str, owner: Optional[str] = None) -> Dict:
         payload["scale"] = args["scale"]
     try:
         async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(f"http://localhost:7000/api/gallery/{action}", json=payload)
+            resp = await client.post(f"{_COOKBOOK_BASE}/api/gallery/{action}", json=payload)
             data = resp.json()
         if data.get("success") or data.get("id"):
             return {"output": f"Image edited ({action}). New image ID: {data.get('id', '?')}", "exit_code": 0}
@@ -3777,7 +3811,7 @@ async def do_resolve_contact(content: str, owner: Optional[str] = None) -> Dict:
     async with httpx.AsyncClient(timeout=30) as client:
         # 2. Email history (sent/received)
         try:
-            resp = await client.get("http://localhost:7000/api/email/resolve-contact", params={"name": name})
+            resp = await client.get(f"{_COOKBOOK_BASE}/api/email/resolve-contact", params={"name": name})
             if resp.status_code == 200:
                 for c in (resp.json().get("contacts") or []):
                     email = (c.get("email") or "").strip().lower()

@@ -354,6 +354,7 @@ async def build_chat_context(
     webhook_manager=None,
     use_enhanced_message: bool = False,
     agent_mode: bool = False,
+    crew_system_prompt: str = None,
 ) -> ChatContext:
     """Build the full context (preface + messages) for an LLM call.
 
@@ -412,7 +413,9 @@ async def build_chat_context(
         use_web=use_web and not skip_web,
         use_memory=mem_enabled,
         time_filter=time_filter,
-        preset_system_prompt=preset.system_prompt,
+        # Persona precedence: an explicit one-off preset/character wins; else
+        # the agent bound to this session (crew_system_prompt); else none.
+        preset_system_prompt=(preset.system_prompt or crew_system_prompt),
         owner=user,
         character_name=preset.character_name,
         agent_mode=agent_mode,

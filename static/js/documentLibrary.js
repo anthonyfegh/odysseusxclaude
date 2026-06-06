@@ -10,6 +10,7 @@ import spinnerModule from './spinner.js';
 import markdownModule from './markdown.js';
 import { makeWindowDraggable } from './windowDrag.js';
 import { langIcon } from './langIcons.js';
+import fileHandlerModule from './fileHandler.js';
 
 // ── Injected references from documentModule ──
 let API_BASE = '';
@@ -79,6 +80,9 @@ let _libraryEscHandler = null;
 let _librarySelectMode = false;
 let _librarySelectedIds = new Set();
 let _libraryImportMode = false;
+// When true, clicking a card SNAPSHOTS the item as a chat attachment instead of
+// opening/expanding it. Set from openLibrary({pick:true}); reset on close.
+let _libraryPickMode = false;
 let _libScrollBound = false;   // infinite-scroll listener attached once
 let _libraryArchivedView = false;   // Documents tab showing archived docs?
 
@@ -115,23 +119,27 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
   // then write to the clipboard. Same User: / Assistant: format the chat
   // header's "Copy Chat" button uses, but works for any session ID — the
   // library doesn't need the chat to be loaded in the UI first.
+  async function _chatTranscript(sessionId) {
+    const res = await fetch(`${API_BASE}/api/history/${sessionId}`, { credentials: 'same-origin' });
+    if (!res.ok) throw new Error(res.statusText);
+    const data = await res.json();
+    const history = Array.isArray(data) ? data : (data.history || []);
+    const lines = [];
+    for (const m of history) {
+      if (m.role !== 'user' && m.role !== 'assistant') continue;
+      const label = m.role === 'user' ? 'User' : 'Assistant';
+      const body = (m.content || '')
+        .replace(/<think>[\s\S]*?<\/think>/g, '')
+        .replace(/<think>[\s\S]*$/, '')
+        .trim();
+      if (body) lines.push(`${label}: ${body}`);
+    }
+    return lines.join('\n\n');
+  }
+
   async function _copyChatById(sessionId) {
     try {
-      const res = await fetch(`${API_BASE}/api/history/${sessionId}`, { credentials: 'same-origin' });
-      if (!res.ok) throw new Error(res.statusText);
-      const data = await res.json();
-      const history = Array.isArray(data) ? data : (data.history || []);
-      const lines = [];
-      for (const m of history) {
-        if (m.role !== 'user' && m.role !== 'assistant') continue;
-        const label = m.role === 'user' ? 'User' : 'Assistant';
-        const body = (m.content || '')
-          .replace(/<think>[\s\S]*?<\/think>/g, '')
-          .replace(/<think>[\s\S]*$/, '')
-          .trim();
-        if (body) lines.push(`${label}: ${body}`);
-      }
-      const text = lines.join('\n\n');
+      const text = await _chatTranscript(sessionId);
       if (uiModule && uiModule.copyToClipboard) {
         await uiModule.copyToClipboard(text);
       } else {
@@ -139,6 +147,101 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       }
     } catch (err) {
       if (uiModule && uiModule.showError) uiModule.showError('Failed to copy chat');
+    }
+  }
+
+  // ---- Attach-from-Library: snapshot a library item as a chat attachment ----
+  // Picking an item turns its text into a normal File and hands it to the
+  // composer's attachment pipeline (fileHandlerModule.addFiles). From there the
+  // existing upload → /api/chat_stream → build_user_content inlining handles
+  // everything, so this needs no backend support. The backend inlines text
+  // attachments capped at 30k chars, so we cap here too to keep uploads small
+  // and make truncation explicit to the user and the model.
+  const LIB_SNAPSHOT_CAP = 30000;
+
+  function _slugify(s) {
+    return (s || 'item').toString().toLowerCase()
+      .replace(/[^\w\s-]/g, '').trim().replace(/[\s_]+/g, '-').slice(0, 60) || 'item';
+  }
+
+  // Keep the HEAD of long content (reports/documents read top-down).
+  function _capHead(text, cap = LIB_SNAPSHOT_CAP) {
+    text = (text || '').toString();
+    if (text.length <= cap) return text;
+    let cut = text.lastIndexOf('\n', cap);
+    if (cut < cap * 0.6) cut = cap;   // no nearby newline → hard cut
+    return text.slice(0, cut).trimEnd() +
+      `\n\n[…snapshot truncated at ${Math.round(cap / 1000)}k chars — open the full item in the Library.]`;
+  }
+
+  // Keep the TAIL of long content (chats — recent turns are at the end).
+  function _capTail(text, cap = LIB_SNAPSHOT_CAP) {
+    text = (text || '').toString();
+    if (text.length <= cap) return text;
+    let start = text.indexOf('\n', text.length - cap);
+    if (start < 0 || start > text.length - cap * 0.6) start = text.length - cap;
+    return '[…earlier turns truncated — open the full chat in the Library.]\n\n' + text.slice(start).trimStart();
+  }
+
+  function _emitPick(file) {
+    fileHandlerModule.addFiles([file]);   // also calls renderAttachStrip()
+    if (uiModule && uiModule.showToast) uiModule.showToast(`Attached "${file.name}"`);
+    closeLibrary();
+    const ta = document.getElementById('message');
+    if (ta) { try { ta.focus(); } catch {} }
+  }
+
+  async function _pickResearch(item) {
+    try {
+      let detail = item;
+      try {
+        const res = await fetch(`${API_BASE}/api/research/detail/${item.id}`, { credentials: 'same-origin' });
+        if (res.ok) detail = await res.json();
+      } catch {}
+      const title = (detail.query || item.query || 'Research').toString().trim();
+      let report = (detail.result || detail.raw_report || '').toString().trim();
+      report = report ? _capHead(report, LIB_SNAPSHOT_CAP - 4000) : '(No report body)';
+      const sources = Array.isArray(detail.sources) ? detail.sources : [];
+      let sourcesMd = '';
+      if (sources.length) {
+        const list = sources.slice(0, 40).map((s, i) => {
+          const t = (s.title || s.url || `Source ${i + 1}`).toString().trim();
+          return s.url ? `- [${t}](${s.url})` : `- ${t}`;
+        }).join('\n');
+        sourcesMd = `\n\n## Sources (${sources.length})\n${list}`;
+      }
+      const md = `# ${title}\n\n${report}${sourcesMd}\n`;
+      _emitPick(new File([md], `${_slugify(title)}.md`, { type: 'text/markdown' }));
+    } catch (err) {
+      if (uiModule && uiModule.showError) uiModule.showError('Failed to attach research');
+    }
+  }
+
+  async function _pickDocument(doc) {
+    try {
+      const res = await fetch(`${API_BASE}/api/document/${doc.id}`, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('Failed');
+      const full = await res.json();
+      const extMap = { javascript: '.js', python: '.py', html: '.html', css: '.css', markdown: '.md', json: '.json', yaml: '.yml', bash: '.sh', sql: '.sql', rust: '.rs', go: '.go', java: '.java', c: '.c', cpp: '.cpp', typescript: '.ts', ruby: '.rb', php: '.php', xml: '.xml', toml: '.toml', ini: '.ini' };
+      const ext = extMap[full.language] || '.txt';
+      const baseName = (full.title || doc.title || 'document').toString().trim();
+      const fname = /\.[a-z0-9]{1,5}$/i.test(baseName) ? baseName : baseName + ext;
+      const content = _capHead((full.current_content || '').toString());
+      const mime = ext === '.md' ? 'text/markdown' : 'text/plain';
+      _emitPick(new File([content], fname, { type: mime }));
+    } catch (err) {
+      if (uiModule && uiModule.showError) uiModule.showError('Failed to attach document');
+    }
+  }
+
+  async function _pickChat(session) {
+    try {
+      const text = await _chatTranscript(session.id);
+      if (!text) { if (uiModule && uiModule.showToast) uiModule.showToast('Chat is empty'); return; }
+      const name = `${_slugify(session.name || 'chat')}.md`;
+      _emitPick(new File([_capTail(text)], name, { type: 'text/markdown' }));
+    } catch (err) {
+      if (uiModule && uiModule.showError) uiModule.showError('Failed to attach chat');
     }
   }
 
@@ -800,6 +903,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
 
     card.addEventListener('click', () => {
       if (card._suppressNextClick) { card._suppressNextClick = false; return; }
+      if (_libraryPickMode) { _pickDocument(doc); return; }
       if (_librarySelectMode) {
         const cb = card.querySelector('.memory-select-cb');
         if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }
@@ -1527,6 +1631,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
     }
     _libraryOpen = true;
     _libraryImportMode = !!(opts && opts.import);
+    _libraryPickMode = !!(opts && opts.pick);
     _librarySelectMode = false;
     _librarySelectedIds.clear();
     _librarySearch = '';
@@ -1748,6 +1853,15 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
 
     // Wire events
     document.getElementById('doclib-close').addEventListener('click', closeLibrary);
+
+    // Pick mode (Attach from Library): relabel so it's clear a click attaches.
+    if (_libraryPickMode) {
+      const _h = modal.querySelector('.modal-header h4');
+      if (_h && _h.lastChild) _h.lastChild.textContent = 'Attach from Library';
+      modal.querySelectorAll('.doclib-desc').forEach(d => {
+        d.textContent = 'Click an item to attach it to your message.';
+      });
+    }
 
     // Tab switching — Chats / Documents / Archive / Research
     let _activeLibTab = (opts && opts.tab) || 'documents';
@@ -2044,8 +2158,9 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         } }); });
         card.addEventListener('click', (e) => {
           if (card._suppressNextClick) { card._suppressNextClick = false; return; }
-          if (_chatsSelectMode) { const c = card.querySelector('.memory-select-cb'); if (c) { c.checked = !c.checked; if (c.checked) _chatsSelected.add(s.id); else _chatsSelected.delete(s.id); _updateChatsCount(); } return; }
           if (e.target.closest('._chat-menu') || e.target.closest('.memory-select-cb') || e.target.closest('.doclib-chat-open-btn')) return;
+          if (_libraryPickMode) { _pickChat(s); return; }
+          if (_chatsSelectMode) { const c = card.querySelector('.memory-select-cb'); if (c) { c.checked = !c.checked; if (c.checked) _chatsSelected.add(s.id); else _chatsSelected.delete(s.id); _updateChatsCount(); } return; }
           _toggleChatPreview(card, s);
         });
         _attachLongPressMenu(card, '._chat-menu');
@@ -2832,6 +2947,11 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
           if (card._suppressNextClick) { card._suppressNextClick = false; return; }
           if (e.target.closest('.doclib-research-delete') || e.target.closest('._res-cb') || e.target.closest('.doclib-chat-open-btn')) return;
           const rid = card.dataset.researchId;
+          if (_libraryPickMode) {
+            const item = _researchItems.find(r => r.id === rid);
+            if (item) _pickResearch(item);
+            return;
+          }
           if (_researchSelectMode) {
             const cb = card.querySelector('._res-cb');
             if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }
@@ -3296,6 +3416,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
     _librarySelectMode = false;
     _librarySelectedIds.clear();
     _libraryImportMode = false;
+    _libraryPickMode = false;
     clearTimeout(_librarySearchDebounce);
 
     const modal = document.getElementById('doclib-modal');

@@ -82,11 +82,25 @@ def setup_history_routes(session_manager) -> APIRouter:
             finally:
                 db.close()
 
+        # Surface the bound agent (the in-memory Session dataclass drops it).
+        _crew_id = None
+        try:
+            from core.database import Session as _DbSession
+            _db2 = SessionLocal()
+            try:
+                _row = _db2.query(_DbSession.crew_member_id).filter(_DbSession.id == session_id).first()
+                _crew_id = _row[0] if _row else None
+            finally:
+                _db2.close()
+        except Exception:
+            pass
+
         return {
             "history": history_dict,
             "model": session.model,
             "endpoint_url": session.endpoint_url,
             "name": session.name,
+            "crew_member_id": _crew_id,
         }
 
     @router.post("/api/session/{session_id}/truncate")

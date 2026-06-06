@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from core.database import SessionLocal, ScheduledTask, TaskRun
@@ -36,6 +37,7 @@ class TaskCreate(BaseModel):
     endpoint_url: Optional[str] = None
     then_task_id: Optional[str] = None            # chain: run this task after success
     notifications_enabled: Optional[bool] = None  # None lets action-specific defaults apply
+    crew_member_id: Optional[str] = None          # agent this task runs as
 
 
 class TaskUpdate(BaseModel):
@@ -56,6 +58,8 @@ class TaskUpdate(BaseModel):
     endpoint_url: Optional[str] = None
     then_task_id: Optional[str] = None
     notifications_enabled: Optional[bool] = None
+    crew_member_id: Optional[str] = None
+    learned_guidance: Optional[str] = None       # task-teacher guidance; "" clears it
 
 
 def _display_task_name(t: ScheduledTask) -> str:
@@ -65,7 +69,7 @@ def _display_task_name(t: ScheduledTask) -> str:
     return t.name
 
 
-def _task_to_dict(t: ScheduledTask, include_last_run_result: bool = False) -> dict:
+def _task_to_dict(t: ScheduledTask, include_last_run_result: bool = False, name_map: dict = None) -> dict:
     defs = HOUSEKEEPING_DEFAULTS.get(t.action) if t.action else None
     d = {
         "id": t.id,
@@ -88,10 +92,12 @@ def _task_to_dict(t: ScheduledTask, include_last_run_result: bool = False) -> di
         "output_target": t.output_target,
         "session_id": t.session_id,
         "crew_member_id": getattr(t, "crew_member_id", None),
+        "crew_member_name": (name_map or {}).get(getattr(t, "crew_member_id", None)),
         "model": t.model,
         "endpoint_url": t.endpoint_url,
         "run_count": t.run_count or 0,
         "then_task_id": t.then_task_id,
+        "learned_guidance": getattr(t, "learned_guidance", None),
         "notifications_enabled": bool(getattr(t, "notifications_enabled", True)),
         "webhook_token": t.webhook_token if (t.trigger_type or "schedule") == "webhook" else None,
         "created_at": t.created_at.isoformat() + "Z" if t.created_at else None,
@@ -212,7 +218,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
 
     @router.get("")
     async def list_tasks(request: Request, status: Optional[str] = None,
-                         include_last_run: bool = False):
+                         include_last_run: bool = False, crew_member_id: Optional[str] = None):
         user = _owner(request)
         if user:
             await task_scheduler.ensure_defaults(user)
@@ -237,8 +243,17 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                 q = q.filter(ScheduledTask.owner == user)
             if status:
                 q = q.filter(ScheduledTask.status == status)
+            if crew_member_id:
+                q = q.filter(ScheduledTask.crew_member_id == crew_member_id)
             tasks = q.order_by(ScheduledTask.created_at.desc()).all()
-            return {"tasks": [_task_to_dict(t, include_last_run_result=include_last_run) for t in tasks]}
+            # Batch-resolve agent names (avoid N+1) for the owning-agent chip.
+            from core.database import CrewMember
+            _cids = {t.crew_member_id for t in tasks if getattr(t, "crew_member_id", None)}
+            name_map = {}
+            if _cids:
+                for cm in db.query(CrewMember.id, CrewMember.name).filter(CrewMember.id.in_(_cids)).all():
+                    name_map[cm.id] = cm.name
+            return {"tasks": [_task_to_dict(t, include_last_run_result=include_last_run, name_map=name_map) for t in tasks]}
         finally:
             db.close()
 
@@ -384,6 +399,15 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                 else bool(req.notifications_enabled) if req.notifications_enabled is not None
                 else True
             )
+            from src import crew_service as _cs
+            if req.crew_member_id:
+                if not _cs.find_agent(db, req.crew_member_id, user):
+                    raise HTTPException(404, "Agent not found")
+                _crew_id = req.crew_member_id
+            else:
+                # No agent specified → attribute the task to the owner's default
+                # assistant so every task (and its activity) belongs to an agent.
+                _crew_id = _cs.default_assistant_id(db, user)
             task = ScheduledTask(
                 id=task_id,
                 owner=user,
@@ -408,6 +432,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                 then_task_id=req.then_task_id or None,
                 webhook_token=webhook_token,
                 notifications_enabled=notifications_enabled,
+                crew_member_id=_crew_id,
             )
             db.add(task)
             db.commit()
@@ -555,6 +580,16 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                 task.then_task_id = req.then_task_id or None
             if req.notifications_enabled is not None:
                 task.notifications_enabled = bool(req.notifications_enabled)
+            if req.learned_guidance is not None:
+                task.learned_guidance = req.learned_guidance or None   # "" clears it
+            if req.crew_member_id is not None:
+                if req.crew_member_id:
+                    from src import crew_service as _cs
+                    if not _cs.find_agent(db, req.crew_member_id, user):
+                        raise HTTPException(404, "Agent not found")
+                    task.crew_member_id = req.crew_member_id
+                else:
+                    task.crew_member_id = None
             if req.cron_expression is not None:
                 if req.cron_expression:
                     try:
@@ -729,8 +764,9 @@ def setup_task_routes(task_scheduler) -> APIRouter:
         return {"ok": True, "message": "Task stopped"}
 
     @router.get("/runs/recent")
-    async def list_recent_runs(request: Request, limit: int = 50):
-        """Recent task runs across ALL tasks for this owner. Drives the Activity view."""
+    async def list_recent_runs(request: Request, limit: int = 50, crew_member_id: Optional[str] = None):
+        """Recent task runs across ALL tasks for this owner. Drives the Activity view.
+        Pass crew_member_id to scope to one agent (per-agent dashboard)."""
         user = _owner(request)
         limit = max(1, min(limit, 200))
         db = SessionLocal()
@@ -738,6 +774,8 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             q = db.query(TaskRun, ScheduledTask).join(
                 ScheduledTask, TaskRun.task_id == ScheduledTask.id
             )
+            if crew_member_id:
+                q = q.filter(ScheduledTask.crew_member_id == crew_member_id)
             if user:
                 # Strict owner scope — was previously OR'ing in `owner IS NULL`
                 # rows for "legacy single-user" back-compat, but that leaks any
@@ -788,6 +826,96 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             }
         finally:
             db.close()
+
+    @router.get("/runs/active")
+    async def list_active_runs(request: Request, crew_member_id: Optional[str] = None):
+        """Currently-streaming task runs (status running) for this owner.
+        Drives the Workspace console's live indicators."""
+        user = _owner(request)
+        from src import task_run_live
+        live_ids = set(task_run_live.active_run_ids())
+        if not live_ids:
+            return {"runs": []}
+        db = SessionLocal()
+        try:
+            q = db.query(TaskRun, ScheduledTask).join(
+                ScheduledTask, TaskRun.task_id == ScheduledTask.id
+            ).filter(TaskRun.id.in_(live_ids))
+            if crew_member_id:
+                q = q.filter(ScheduledTask.crew_member_id == crew_member_id)
+            if user:
+                q = q.filter(ScheduledTask.owner == user)
+            rows = q.order_by(TaskRun.started_at.desc()).all()
+            return {
+                "runs": [
+                    {
+                        **_run_to_dict(r),
+                        "task_name": _display_task_name(t),
+                        "task_type": t.task_type or "llm",
+                        "crew_member_id": t.crew_member_id or "",
+                        "live": True,
+                    }
+                    for r, t in rows
+                ]
+            }
+        finally:
+            db.close()
+
+    @router.get("/runs/{run_id}/steps")
+    async def get_run_steps(request: Request, run_id: str):
+        """Persisted structured step timeline for a finished run (replay)."""
+        user = _owner(request)
+        db = SessionLocal()
+        try:
+            row = db.query(TaskRun, ScheduledTask).join(
+                ScheduledTask, TaskRun.task_id == ScheduledTask.id
+            ).filter(TaskRun.id == run_id).first()
+            if not row:
+                raise HTTPException(404, "Run not found")
+            r, t = row
+            if user and t.owner != user:
+                raise HTTPException(403, "Access denied")
+            steps = []
+            if getattr(r, "steps", None):
+                try:
+                    steps = json.loads(r.steps)
+                except Exception:
+                    steps = []
+            return {
+                "run_id": run_id,
+                "status": r.status,
+                "steps": steps,
+                "result": r.result or r.error or "",
+                "crew_member_id": t.crew_member_id or "",
+                "task_name": _display_task_name(t),
+            }
+        finally:
+            db.close()
+
+    @router.get("/runs/{run_id}/live")
+    async def stream_run_live(request: Request, run_id: str):
+        """SSE: replay the run's live event buffer, then stream until it ends.
+        If the buffer is already evicted, the stream closes immediately and the
+        client falls back to GET /runs/{run_id}/steps."""
+        user = _owner(request)
+        db = SessionLocal()
+        try:
+            row = db.query(TaskRun, ScheduledTask).join(
+                ScheduledTask, TaskRun.task_id == ScheduledTask.id
+            ).filter(TaskRun.id == run_id).first()
+            if not row:
+                raise HTTPException(404, "Run not found")
+            r, t = row
+            if user and t.owner != user:
+                raise HTTPException(403, "Access denied")
+        finally:
+            db.close()
+        from src import task_run_live
+        return StreamingResponse(
+            task_run_live.subscribe(run_id),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @router.get("/{task_id}/runs")
     async def list_runs(request: Request, task_id: str, limit: int = 20, offset: int = 0):

@@ -298,6 +298,27 @@ def _brave_search_impl(query: str, count: int, time_filter: Optional[str] = None
 
 # ── DuckDuckGo (free, no key) ──
 
+def _ddg_real_url(url: str) -> str:
+    """DuckDuckGo HTML results are redirector links like
+    `//duckduckgo.com/l/?uddg=<urlencoded-real-url>&rut=...`. Decode them to the
+    real destination so the content fetcher can actually fetch the page (without
+    this, every fetch targets a duckduckgo redirect and 0 pages are extracted)."""
+    if not url:
+        return url
+    from urllib.parse import urlparse, parse_qs, unquote
+    if url.startswith("//"):
+        url = "https:" + url
+    try:
+        p = urlparse(url)
+        if p.netloc.endswith("duckduckgo.com") and p.path.startswith("/l/"):
+            real = parse_qs(p.query).get("uddg", [None])[0]
+            if real:
+                return unquote(real)
+    except Exception:
+        pass
+    return url
+
+
 def duckduckgo_search(query: str, count: int = 10, time_filter: Optional[str] = None) -> List[dict]:
     """Search using DuckDuckGo via the duckduckgo-search library. No API key needed."""
     def _html_fallback() -> List[dict]:
@@ -315,7 +336,7 @@ def duckduckgo_search(query: str, count: int = 10, time_filter: Optional[str] = 
                 link = result.select_one(".result__a")
                 if not link:
                     continue
-                url = link.get("href", "")
+                url = _ddg_real_url(link.get("href", ""))
                 if not url:
                     continue
                 snippet_el = result.select_one(".result__snippet")
@@ -346,7 +367,7 @@ def duckduckgo_search(query: str, count: int = 10, time_filter: Optional[str] = 
         raw = ddgs.text(query, max_results=count, timelimit=timelimit)
         results = []
         for item in raw:
-            url = item.get("href", "")
+            url = _ddg_real_url(item.get("href", ""))
             if not url:
                 continue
             results.append({

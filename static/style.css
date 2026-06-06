@@ -565,10 +565,12 @@ body.bg-pattern-sparkles {
     #sessions-section {
       margin-top: -1px;
     }
-    #tools-section {
+    #tools-section,
+    #agent-section {
       margin-top: 1px;
     }
-    #tools-section .list-item {
+    #tools-section .list-item,
+    #agent-section .list-item {
       padding: 8px 8px;
     }
     .sidebar.right-side .sidebar-header {
@@ -20519,7 +20521,19 @@ body:not(.welcome-ready) #welcome-screen {
 }
 
 /* ── Tasks ── */
-.tasks-modal-content { max-width: 600px; width: min(600px, 92vw); background: var(--bg); font-size: 12px; }
+.tasks-modal-content { max-width: 600px; width: min(600px, 92vw); background: var(--bg); font-size: 12px;
+  /* Bounded, scrollable height chain (matches the Brain/Memory modal) so inner
+     views — Tasks list, Activity, and especially the portaled Skills panel with
+     an expanded skill — scroll inside the modal instead of overflowing it. */
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* basis:auto (not 0) — in an auto-height flex column a basis:0 body collapses
+   to zero (blank modal). auto sizes it to content, then the parent's max-height
+   + overflow let inner lists/the expanded skill scroll when content is tall. */
+.tasks-modal-content > .modal-body { flex: 1 1 auto; min-height: 0; }
 
 /* Tasks tabs reuse the .memory-tab look. The Brain window's tab bar is
    full-bleed (its underline spans the whole modal width). The Tasks bar is a
@@ -20529,7 +20543,13 @@ body:not(.welcome-ready) #welcome-screen {
 .tasks-modal-content .tasks-tabs {
   margin: -2px -10px 8px;
   padding: 0 10px;
+  /* Agent hub has 5 sub-tabs (Soul/Tasks/Skills/Activity/Add) — let them scroll
+     horizontally on narrow widths instead of overflowing the modal. */
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.tasks-modal-content .tasks-tabs::-webkit-scrollbar { display: none; }
+.tasks-modal-content .tasks-tab { flex-shrink: 0; }
 
 /* Activity log — compact by default. Click the row to expand body+actions. */
 .task-log-row {

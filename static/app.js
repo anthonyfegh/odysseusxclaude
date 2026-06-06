@@ -21,6 +21,8 @@ import voiceRecorderModule from './js/voiceRecorder.js';
 import censorModule from './js/censor.js';
 import galleryModule from './js/gallery.js';
 import tasksModule from './js/tasks.js';
+import agentsModule from './js/agents.js';
+import workspaceModule from './js/workspace.js';
 import calendarModule from './js/calendar.js';
 import notesModule from './js/notes.js';
 import adminModule from './js/admin.js';
@@ -50,6 +52,9 @@ window.sessionModule = sessionModule;
 window.uiModule = uiModule;
 window.adminModule = adminModule;
 window.cookbookModule = cookbookModule;
+window.tasksModule = tasksModule;   // Agent hub (Soul/Tasks/Skills/Activity); used by the assistant gear + openSkill
+window.agentsModule = agentsModule;  // Agent Manager (roster: create/edit/delete/chat-as-agent)
+window.workspaceModule = workspaceModule;  // Agent Workspace console (live runs, files, artifacts)
 
 // Redirect to login on 401 from any fetch
 const _origFetch = window.fetch;
@@ -95,6 +100,9 @@ function initializeEventListeners() {
   // File attachments (inside overflow menu)
   const _overflowAttach = el('overflow-attach-btn');
   if (_overflowAttach) _overflowAttach.addEventListener('click', fileHandlerModule.openPicker);
+  const _overflowAttachLib = el('overflow-attach-lib-btn');
+  if (_overflowAttachLib) _overflowAttachLib.addEventListener('click',
+    () => documentModule.openLibrary({ pick: true, tab: 'research' }));
   el('file-input').addEventListener('change', (e)=>{
     for (const f of e.target.files) fileHandlerModule.addFiles([f]);
     fileHandlerModule.renderAttachStrip();
@@ -832,21 +840,18 @@ function initializeEventListeners() {
     });
   }
 
-  // Tasks tool button
-  const toolTasksBtn = el('tool-tasks-btn');
-  if (toolTasksBtn) {
-  // Agents buttons (sidebar + rail)
-  const agentsBtns = [el("rail-agents"), el("tool-agents-btn")].filter(Boolean);
-  agentsBtns.forEach(btn => {
-    btn.addEventListener("click", () => {
+  // Agent section (sidebar): each row opens the Agent hub to its sub-view.
+  // Navigation lives in the sidebar now (the modal's own tab bar is hidden),
+  // so clicking a row just opens/switches the hub to that view.
+  document.querySelectorAll('.agent-nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      if (!tasksModule) return;
+      tasksModule.openTasks(null, item.dataset.agentTab || 'soul');
     });
   });
-    toolTasksBtn.addEventListener('click', () => {
-      if (tasksModule) {
-        tasksModule.isTasksOpen() ? tasksModule.closeTasks() : tasksModule.openTasks();
-      }
-    });
-  }
+  // Agent Manager (roster) — the new multi-agent home.
+  el('agent-nav-manager')?.addEventListener('click', () => agentsModule.openManager());
+  el('agent-nav-workspace')?.addEventListener('click', () => workspaceModule.openWorkspace());
 
   // Calendar tool button
   const toolCalendarBtn = el('tool-calendar-btn');
@@ -999,7 +1004,7 @@ function initializeEventListeners() {
     },
     '/memory':   () => document.getElementById('tool-memory-btn')?.click(),
     '/gallery':  () => document.getElementById('tool-gallery-btn')?.click(),
-    '/tasks':    () => document.getElementById('tool-tasks-btn')?.click(),
+    '/tasks':    () => document.getElementById('agent-nav-tasks')?.click(),
     '/library':  () => sessionModule && sessionModule.openLibrary && sessionModule.openLibrary(),
   };
   const _opener = _routeOpen[urlPath];
@@ -1726,6 +1731,8 @@ function initializeEventListeners() {
       if (e.target.closest('textarea, input')) return;
       // Don't refocus for attach — file picker needs full focus control
       if (e.target.closest('#overflow-attach-btn')) return;
+      // Attach-from-Library opens a modal whose search input should take focus
+      if (e.target.closest('#overflow-attach-lib-btn')) return;
       // Don't refocus for model picker button — focus should go to picker search input
       if (e.target.closest('.model-picker-btn')) return;
       // Don't refocus when tapping the +/chevron tools button — the user
@@ -2348,7 +2355,7 @@ function initializeEventListeners() {
     'tool-library':        '#tool-library-btn',
     'tool-memory':         '#tool-memory-btn',
     'tool-notes':          '#tool-notes-btn',
-    'tool-tasks':          '#tool-tasks-btn',
+    'tool-tasks':          '#agent-nav-tasks',
     'tool-theme':          '#tool-theme-btn',
     'user-bar':            '#user-bar-profile',
     'sidebar-settings-btn':'#user-bar-settings',
@@ -2363,12 +2370,13 @@ function initializeEventListeners() {
     'mode-toggle':         '.mode-toggle',
     'preset-mini-btn':     '#overflow-preset-btn',
     'attach-btn':          '#overflow-attach-btn',
+    'attach-lib-btn':      '#overflow-attach-lib-btn',
     'research-btn':        '#overflow-research-btn',
     'rail-new-chat':       '#rail-new-session',
   };
 
   // Keys hidden by default on first run (no localStorage yet)
-  const UI_VIS_DEFAULT_OFF = new Set(['models-section', 'rag-toggle-btn']);
+  const UI_VIS_DEFAULT_OFF = new Set(['models-section', 'rag-toggle-btn', 'text-emojis']);
 
   // Keys that need admin to toggle off (reserved for future use)
   const UI_VIS_ADMIN_ONLY = new Set([]);
@@ -2396,11 +2404,11 @@ function initializeEventListeners() {
     document.querySelectorAll('.section[draggable]').forEach(el => {
       el.setAttribute('draggable', dragEnabled ? 'true' : 'false');
     });
-    // Text-only emojis toggle. Default is ON (the checkbox defaults to
-    // checked because text-emojis isn't in UI_VIS_DEFAULT_OFF), so treat
-    // an absent value as enabled — otherwise the toggle looked on at
-    // startup but the effect only activated after the user flipped it.
-    applyTextEmojis(state['text-emojis'] !== false);
+    // Text-only emojis toggle. Default is OFF (text-emojis is now in
+    // UI_VIS_DEFAULT_OFF, so the checkbox defaults unchecked) — emoji render as
+    // monochrome OpenMoji SVG icons via svgifyEmoji. Only an explicit `true`
+    // enables text-label mode, keeping the effect in sync with the checkbox.
+    applyTextEmojis(state['text-emojis'] === true);
     // Hide thinking sections toggle (show-thinking: checked=show, unchecked=hide)
     document.body.classList.toggle('hide-thinking', state['show-thinking'] === false);
   }
@@ -2889,9 +2897,9 @@ function initializeEventListeners() {
   const overflowPresetBtn = el('overflow-preset-btn');
   if (overflowPresetBtn) {
     overflowPresetBtn.addEventListener('click', () => {
-      if (presetsModule && presetsModule.openCustomPresetModal) {
-        presetsModule.openCustomPresetModal();
-      }
+      // Repurposed "Prompt/Character" → the agent picker for the current chat.
+      const sid = window.sessionModule?.getCurrentSessionId?.();
+      if (agentsModule && agentsModule.openAgentPicker) agentsModule.openAgentPicker(sid);
     });
   }
 
@@ -3445,7 +3453,7 @@ function startOdysseusApp() {
     'rail-cookbook':   'tool-cookbook-btn',
     'rail-archive':   'tool-library-btn',
     'rail-gallery':   'tool-gallery-btn',
-    'rail-tasks':     'tool-tasks-btn',
+    'rail-tasks':     'agent-nav-tasks',
     'rail-calendar':  'tool-calendar-btn',
     'rail-notes':     'tool-notes-btn',
     'rail-memory':    'tool-memory-btn',

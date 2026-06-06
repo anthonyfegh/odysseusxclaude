@@ -2465,9 +2465,9 @@ async function initEmailAccountsSettings() {
         const mod = await import('./tasks.js');
         const openTasks = mod.openTasks || (mod.default && mod.default.openTasks);
         if (typeof openTasks === 'function') openTasks();
-        else document.getElementById('tool-tasks-btn')?.click();
+        else document.getElementById('agent-nav-tasks')?.click();
       } catch (_) {
-        document.getElementById('tool-tasks-btn')?.click();
+        document.getElementById('agent-nav-tasks')?.click();
       }
     });
   }

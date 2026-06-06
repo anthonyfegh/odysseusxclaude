@@ -485,6 +485,10 @@ class CrewMember(TimestampMixin, Base):
     sort_order    = Column(Integer, default=0)
     is_default_assistant = Column(Boolean, default=False)   # singleton per-owner "personal assistant"
     timezone      = Column(String, nullable=True)           # IANA tz name (e.g. "America/New_York") for scheduled check-ins
+    description   = Column(Text, nullable=True)             # short one-line role blurb (distinct from personality)
+    color         = Column(String, nullable=True)           # avatar accent color (hex/name) for the roster
+    category      = Column(String, nullable=True)           # grouping/template category, e.g. "assistant"|"research"
+    status        = Column(String, nullable=True)           # NULL/"active" = real agent; "draft" = in-progress builder draft
 
     session = relationship("Session", foreign_keys=[session_id],
                            backref=backref("crew_member", uselist=False))
@@ -528,6 +532,10 @@ class ScheduledTask(TimestampMixin, Base):
     max_steps      = Column(Integer, nullable=True)       # max agent loop iterations (null=unlimited)
     email_results  = Column(Boolean, default=True)        # email results to character.email_to
     notifications_enabled = Column(Boolean, default=True) # per-task on/off for completion notifications
+    # Guidance written by the task teacher (Opus 4.8 via sidecar) after a run
+    # gave up — auto-appended to the system prompt on every future run so the
+    # task does better next time. NULL = none yet.
+    learned_guidance = Column(Text, nullable=True)
 
     session = relationship("Session", backref=backref("scheduled_tasks", cascade="save-update, merge"))
     then_task = relationship("ScheduledTask", remote_side=[id], foreign_keys=[then_task_id])
@@ -1260,6 +1268,19 @@ def _migrate_add_task_v2_columns():
     except Exception as e:
         logging.getLogger(__name__).warning(f"task v2 migration: {e}")
 
+def _migrate_add_learned_guidance():
+    """Add scheduled_tasks.learned_guidance (task-teacher guidance, see model)."""
+    try:
+        with engine.connect() as conn:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(scheduled_tasks)"))]
+            if "learned_guidance" not in cols:
+                conn.execute(text("ALTER TABLE scheduled_tasks ADD COLUMN learned_guidance TEXT"))
+                conn.commit()
+                logging.getLogger(__name__).info("Added scheduled_tasks.learned_guidance")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"learned_guidance migration: {e}")
+
+
 def _migrate_drop_ping_notes_tasks():
     """One-time cleanup: ping_notes and ping_events used to be seeded as
     user-facing tasks. They're now pure background scanners inside the
@@ -1324,6 +1345,20 @@ def _migrate_add_assistant_columns():
                 conn.execute(text("ALTER TABLE crew_members ADD COLUMN timezone TEXT"))
                 conn.commit()
                 logging.getLogger(__name__).info("Added timezone column to crew_members")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"assistant columns migration: {e}")
+
+def _migrate_add_agent_columns():
+    """Add description/color/category/status columns to crew_members for the
+    multi-agent manager (idempotent — safe to re-run)."""
+    try:
+        with engine.connect() as conn:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(crew_members)"))]
+            for col in ("description", "color", "category", "status"):
+                if col not in cols:
+                    conn.execute(text(f"ALTER TABLE crew_members ADD COLUMN {col} TEXT"))
+                    conn.commit()
+                    logging.getLogger(__name__).info(f"Added {col} column to crew_members")
     except Exception as e:
         logging.getLogger(__name__).warning(f"assistant columns migration: {e}")
 
@@ -1517,12 +1552,60 @@ def init_db():
     _migrate_drop_ping_notes_tasks()
     _migrate_add_crew_member_id()
     _migrate_add_assistant_columns()
+    _migrate_add_agent_columns()
+    _migrate_add_learned_guidance()
+    _migrate_assign_default_agent_to_tasks()
     _migrate_seed_email_account()
     _migrate_add_calendar_metadata()
     _migrate_add_calendar_is_utc()
     _migrate_encrypt_email_passwords()
     _migrate_encrypt_signatures()
     _migrate_encrypt_endpoint_keys()
+
+
+def _migrate_assign_default_agent_to_tasks():
+    """Backfill scheduled_tasks.crew_member_id with each owner's default
+    assistant where it is NULL — so every task (including built-in housekeeping)
+    is attributed to an agent and no run shows as "no assigned agent".
+
+    Idempotent: only touches still-null rows, so it safely re-runs each boot and
+    never overrides a task explicitly assigned to another agent. Owners without a
+    default assistant yet are skipped (their tasks stay null until one exists)."""
+    import sqlite3
+    logger = logging.getLogger(__name__)
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    try:
+        conn = sqlite3.connect(db_path)
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(scheduled_tasks)").fetchall()]
+        if "crew_member_id" not in cols:
+            conn.close()
+            return
+        owners = [r[0] for r in conn.execute(
+            "SELECT DISTINCT owner FROM scheduled_tasks "
+            "WHERE crew_member_id IS NULL AND owner IS NOT NULL"
+        ).fetchall()]
+        total = 0
+        for owner in owners:
+            row = conn.execute(
+                "SELECT id FROM crew_members WHERE owner = ? AND is_default_assistant = 1 LIMIT 1",
+                (owner,),
+            ).fetchone()
+            if not row:
+                continue
+            res = conn.execute(
+                "UPDATE scheduled_tasks SET crew_member_id = ? "
+                "WHERE owner = ? AND crew_member_id IS NULL",
+                (row[0], owner),
+            )
+            total += res.rowcount or 0
+        conn.commit()
+        conn.close()
+        if total:
+            logger.info("Attributed %s unassigned task(s) to default assistants", total)
+    except Exception as e:
+        logger.warning(f"Assign default-agent migration failed: {e}")
 
 
 def _migrate_encrypt_endpoint_keys():

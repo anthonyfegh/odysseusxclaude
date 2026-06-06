@@ -22,6 +22,7 @@ from src.endpoint_resolver import normalize_base as _normalize_base, build_chat_
 from src.prompt_security import untrusted_context_message
 from core.exceptions import SessionNotFoundError
 from src.auth_helpers import get_current_user
+from src import crew_service
 from routes.session_routes import _verify_session_owner
 from core.database import SessionLocal, get_session_mode, set_session_mode
 from core.database import Session as DBSession, ChatMessage as DBChatMessage
@@ -290,6 +291,38 @@ def setup_chat_routes(
         # Ensure session has auth headers
         resolve_session_auth(sess, session)
 
+        # ── Agent (crew) binding ────────────────────────────────────────────
+        # If this session is bound to an agent, run the conversation AS that
+        # agent: persona (system prompt), model/endpoint, and tool boundary —
+        # mirroring how scheduled tasks apply a crew. Unbound sessions
+        # (crew is None) keep the exact pre-agent behavior. The crew's
+        # endpoint is a validated, configured endpoint (the claude -p sidecar
+        # by default), so all calls still route through the sidecar.
+        _crew = None
+        _workspace_root = None
+        try:
+            from src.settings import get_setting as _get_setting
+            if _get_setting("crew_chat_binding_enabled", True):
+                _crew = crew_service.resolve_session_crew(session, get_current_user(request))
+        except Exception as _e:
+            logger.warning(f"[agent-binding] resolve failed: {_e}")
+        if _crew:
+            # Model/endpoint backstop: only fill in when the session has none of
+            # its own, so a manual model switch the user made is never stomped.
+            if _crew.model and not (sess.model or "").strip():
+                sess.model = _crew.model
+                if _crew.endpoint_url and not (sess.endpoint_url or "").strip():
+                    sess.endpoint_url = _crew.endpoint_url
+                    resolve_session_auth(sess, session)
+            # The agent works in its own on-disk sandbox folder: write_file/
+            # read_file are confined to it and bash/python run with it as cwd.
+            try:
+                from src.agent_workspace import workspace_root as _agent_workspace_root
+                _workspace_root = _agent_workspace_root(_crew.id)
+            except Exception as _e:
+                logger.warning(f"[agent-binding] workspace root failed: {_e}")
+            logger.info(f"[agent-binding] session {session} → agent '{_crew.name}'")
+
         # Check for research_pending BEFORE mode persist overwrites it
         do_research = str(use_research).lower() == "true"
         if not do_research:
@@ -333,6 +366,7 @@ def setup_chat_routes(
             # manage_skills (agent mode). In plain chat or incognito the
             # index would be useless / unwanted noise.
             agent_mode=(chat_mode == "agent"),
+            crew_system_prompt=(_crew.personality if _crew else None),
         )
 
         _research_flags = {"do": do_research}  # Mutable container for generator scope
@@ -454,6 +488,16 @@ def setup_chat_routes(
             # In chat mode compare, disable ALL agent tools (no bash, python, file ops)
             if chat_mode == 'chat':
                 disabled_tools.update({"bash", "python", "read_file", "write_file", "web_search", "web_fetch", "search_chats", "manage_tasks"})
+
+        # Agent tool boundary: when this session is bound to an agent with an
+        # explicit tool list, disable everything outside it. Additive only —
+        # never re-enables a tool the user/privileges turned off above. Mirrors
+        # task_scheduler's enabled_tools→disabled_tools (an empty list == "all").
+        if _crew:
+            _enabled = crew_service.parse_enabled_tools(_crew.enabled_tools)
+            if _enabled:
+                from src.tool_index import BUILTIN_TOOL_DESCRIPTIONS
+                disabled_tools |= (set(BUILTIN_TOOL_DESCRIPTIONS.keys()) - set(_enabled))
 
         async def stream_with_save() -> AsyncGenerator[str, None]:
             # _effective_mode is read-only here; closure captures it from
@@ -800,6 +844,7 @@ def setup_chat_routes(
                         disabled_tools=disabled_tools if disabled_tools else None,
                         owner=_user,
                         fallbacks=_fallback_candidates,
+                        workspace_root=_workspace_root,
                     ):
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             try:

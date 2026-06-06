@@ -448,32 +448,71 @@ export function mdToHtml(src) {
     });
   }
 
-  // Handle pipe tables
+  // Pre-join table rows that the model split with blank lines. GFM tables must
+  // be contiguous, but some models emit a blank line between every row, which
+  // would otherwise break the parser below (each row renders as a paragraph).
+  // Only blank lines flanked by pipe rows on BOTH sides are removed, so normal
+  // prose paragraphs are left untouched.
+  {
+    const _isPipeRow = (t) => t.includes('|')
+      && !t.includes('___CODE_BLOCK_') && !t.includes('___ALLOWED_HTML_')
+      && !t.includes('___MATH_BLOCK_') && !t.includes('___MERMAID_BLOCK_');
+    const _lines = s.split('\n');
+    const _out = [];
+    for (let i = 0; i < _lines.length; i++) {
+      if (_lines[i].trim() === '' && _out.length && _isPipeRow(_out[_out.length - 1])) {
+        let j = i;
+        while (j < _lines.length && _lines[j].trim() === '') j++;
+        if (j < _lines.length && _isPipeRow(_lines[j])) { i = j - 1; continue; }
+      }
+      _out.push(_lines[i]);
+    }
+    s = _out.join('\n');
+  }
+
+  // Handle pipe tables (GFM). A real table is identified by a delimiter row
+  // (|---|---|); we detect and SKIP it, render rows above it as headers and
+  // rows below it as body cells.
   s = s.replace(/(?:^|\n)([^\n]*\|[^\n]*\|[^\n]*)(?:\n([^\n]*\|[^\n]*\|[^\n]*))*/g, (table) => {
     if (table.includes('___CODE_BLOCK_') || table.includes('___ALLOWED_HTML_')) return table;
 
-    const rows = table.trim().split('\n');
+    const rows = table.trim().split('\n').filter(r => r.trim() !== '');
     if (rows.length < 2) return table;
 
+    // Delimiter row: only pipes, dashes, colons and spaces, and contains a dash.
+    const _isDelim = (r) => r.includes('|') && /-/.test(r) && /^[\s|:-]+$/.test(r.trim());
+    const delimIdx = rows.findIndex(_isDelim);
+    // Require a delimiter to treat the block as a table — avoids turning prose
+    // that merely contains pipe characters into a table.
+    if (delimIdx < 0) return table;
+
+    const splitCells = (row) => row.split('|').filter((cell, ci, arr) =>
+      // Drop the empty leading/trailing cells produced by |a|b| borders, but
+      // keep genuine interior empty cells.
+      !((ci === 0 || ci === arr.length - 1) && cell.trim() === ''));
+
     let html = '<table style="border-collapse: collapse; width: 100%; margin: 10px 0;">';
-
+    let bodyOpen = false;
     rows.forEach((row, idx) => {
-      const cells = row.split('|').filter(cell => cell.trim() !== '');
+      if (idx === delimIdx) return; // skip the |---| separator itself
+      const cells = splitCells(row);
       if (cells.length === 0) return;
-
-      html += idx === 1 ? '<tbody>' : '';
-      html += '<tr>';
-
+      const isHeader = idx < delimIdx;
+      let rowAttr = '';
+      if (!isHeader && !bodyOpen) {
+        html += '<tbody>';
+        bodyOpen = true;
+        rowAttr = ' style="border-top: 2px solid var(--red);"';
+      }
+      html += `<tr${rowAttr}>`;
       cells.forEach(cell => {
-        const tag = idx === 0 ? 'th' : 'td';
-        const style = idx === 1 ? 'style="border-top: 2px solid var(--red);"' : '';
-        html += `<${tag} ${style} style="padding: 8px; text-align: left; border-bottom: 1px solid var(--border);">${cell.trim()}</${tag}>`;
+        const tag = isHeader ? 'th' : 'td';
+        html += `<${tag} style="padding: 8px; text-align: left; border-bottom: 1px solid var(--border);">${cell.trim()}</${tag}>`;
       });
-
       html += '</tr>';
     });
-
-    html += '</tbody></table>';
+    if (bodyOpen) html += '</tbody>';
+    html += '</table>';
     return html;
   });
 

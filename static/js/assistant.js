@@ -136,7 +136,7 @@ async function _fetchEndpoints() {
   } catch { return []; }
 }
 
-function _renderSettingsBody(body, data, tzList) {
+function _renderSettingsBody(body, data, tzList, opts = {}) {
   const crew = data.crew || {};
   const checkIns = data.check_ins || [];
   const enabledTools = new Set(crew.enabled_tools || []);
@@ -217,10 +217,10 @@ function _renderSettingsBody(body, data, tzList) {
           ${toolsHTML}
         </div>
       </div>
-      <div class="assistant-checkins">
+      ${opts.agentId ? '' : `<div class="assistant-checkins">
         <h5>Daily check-ins</h5>
         ${checkInsHTML || '<div style="opacity:0.6;">No check-ins configured.</div>'}
-      </div>
+      </div>`}
       <div class="assistant-settings-actions">
         <button type="button" class="cal-btn" id="assistant-settings-cancel">Cancel</button>
         <button type="button" class="cal-btn cal-btn-primary" id="assistant-settings-save">Save</button>
@@ -349,18 +349,29 @@ function _renderSettingsBody(body, data, tzList) {
       model: body.querySelector('#assistant-model').value || null,
       endpoint_url: body.querySelector('#assistant-endpoint').value || null,
       enabled_tools: selectedTools,
-      check_ins: Array.from(body.querySelectorAll('.assistant-checkin-row')).map((row) => ({
-        id: row.dataset.taskId,
-        name: row.querySelector('.assistant-checkin-name').value.trim(),
-        scheduled_time: row.querySelector('.assistant-checkin-time').value,
-        prompt: row.querySelector('.assistant-checkin-prompt').value,
-        enabled: row.querySelector('.assistant-checkin-enabled').checked,
-      })),
     };
     try {
-      await _saveSettings(payload);
-      uiModule.showToast('Assistant settings saved');
-      _closeModal();
+      if (opts.agentId) {
+        // Editing an arbitrary agent → PATCH /api/agents/{id} (no check-ins).
+        const res = await fetch(`${window.location.origin}/api/agents/${opts.agentId}`, {
+          method: 'PATCH', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`PATCH /api/agents/${opts.agentId} → ${res.status}`);
+        uiModule.showToast('Agent saved');
+        if (typeof opts.onSaved === 'function') opts.onSaved();
+      } else {
+        payload.check_ins = Array.from(body.querySelectorAll('.assistant-checkin-row')).map((row) => ({
+          id: row.dataset.taskId,
+          name: row.querySelector('.assistant-checkin-name').value.trim(),
+          scheduled_time: row.querySelector('.assistant-checkin-time').value,
+          prompt: row.querySelector('.assistant-checkin-prompt').value,
+          enabled: row.querySelector('.assistant-checkin-enabled').checked,
+        }));
+        await _saveSettings(payload);
+        uiModule.showToast('Assistant settings saved');
+        _closeModal();
+      }
     } catch (e) {
       console.error(e);
       uiModule.showToast('Save failed');
@@ -403,14 +414,33 @@ export async function openAssistantSettings() {
   modal.classList.remove('hidden');
   modal.style.display = 'flex';
   const body = modal.querySelector('#assistant-settings-body');
-  body.innerHTML = '<div class="hwfit-loading">Loading…</div>';
+  await mountSoul(body);
+}
+
+// Render the assistant's "soul" (persona/model/tools/timezone + check-ins) into
+// ANY container — used by the Agent tab's Soul sub-view (see tasks.js) so the
+// same form can live inside the Agent modal instead of its own popup.
+export async function mountSoul(container, opts = {}) {
+  if (!container) return;
+  container.innerHTML = '<div class="hwfit-loading">Loading…</div>';
   try {
-    const [data, tzList] = await Promise.all([_getSettings(true), _listTimezones()]);
-    _renderSettingsBody(body, data, tzList);
+    const [data, tzList] = await Promise.all([
+      opts.agentId ? _getAgentSettings(opts.agentId) : _getSettings(true),
+      _listTimezones(),
+    ]);
+    _renderSettingsBody(container, data, tzList, opts);
   } catch (e) {
     console.error(e);
-    body.innerHTML = '<div style="padding:12px;opacity:0.6;">Could not load assistant settings.</div>';
+    container.innerHTML = '<div style="padding:12px;opacity:0.6;">Could not load settings.</div>';
   }
+}
+
+// Persona for an arbitrary agent (no check-ins). Shaped like _getSettings.
+async function _getAgentSettings(agentId) {
+  const res = await fetch(`${window.location.origin}/api/agents/${agentId}`, { credentials: 'same-origin' });
+  if (!res.ok) throw new Error(`GET /api/agents/${agentId} → ${res.status}`);
+  const d = await res.json();
+  return { crew: d.agent || {}, check_ins: [] };
 }
 
 // Sidebar wiring removed — Assistant chat + settings now live as
@@ -435,7 +465,12 @@ async function _ensureHeaderAffordances(sessionId) {
   gear.title = 'Assistant settings';
   gear.className = 'chat-header-btn';
   gear.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
-  gear.addEventListener('click', openAssistantSettings);
+  // Open the Agent tab on its Soul view (the single home); fall back to the
+  // standalone settings popup if the Agent modal isn't available.
+  gear.addEventListener('click', () => {
+    if (window.tasksModule?.openTasks) window.tasksModule.openTasks(null, 'soul');
+    else openAssistantSettings();
+  });
   headerRight.appendChild(gear);
 }
 

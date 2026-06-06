@@ -7,6 +7,8 @@ import markdownModule from './markdown.js';
 import * as spinnerModule from './spinner.js';
 import { makeWindowDraggable } from './windowDrag.js';
 import { sortModelIds } from './modelSort.js';
+import { mountSoul } from './assistant.js';   // Agent "soul" (persona) sub-view
+import skillsModule from './skills.js';        // Agent "skills" sub-view
 
 const API_BASE = window.location.origin;
 let _open = false;
@@ -500,6 +502,20 @@ const _CATEGORY_ICONS = {
   Other:     '<circle cx="12" cy="12" r="3"/>',
 };
 
+const _AGENT_PALETTE = ['#e2504a', '#4aa3e2', '#4ab87a', '#d9a23b', '#9b6cd9', '#3bb0c0', '#d96aa8', '#7a8aa0'];
+function _agentColor(s) {
+  s = String(s || '?'); let h = 0;
+  for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return _AGENT_PALETTE[h % _AGENT_PALETTE.length];
+}
+function _agentChipHtml(task) {
+  if (!task.crew_member_name) return '';
+  const ini = (task.crew_member_name || '?').trim().charAt(0).toUpperCase() || '?';
+  return `<span title="Runs as ${_esc(task.crew_member_name)}" style="display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:1px 7px 1px 2px;border-radius:10px;background:var(--bg);border:1px solid var(--border);margin-left:6px;flex-shrink:0;">`
+    + `<span style="width:14px;height:14px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:600;color:#fff;background:${_agentColor(task.crew_member_name)};">${_esc(ini)}</span>`
+    + `${_esc(task.crew_member_name)}</span>`;
+}
+
 function _categoryFor(task) {
   if (task.task_type === 'action' && task.action) {
     return _CATEGORY_MAP[task.action] || 'Other';
@@ -596,35 +612,43 @@ function _taskClearCacheLabel(taskOrEntry) {
   return _TASK_CACHE_LABELS[taskOrEntry?.action || ''] || '';
 }
 
-function _renderList() {
-  const list = document.getElementById('tasks-list');
+function _renderList(opts) {
+  opts = opts || {};
+  const scoped = !!opts.listEl;            // per-agent dashboard vs the main Tasks tab
+  const source = opts.tasks || _tasks;
+  const list = opts.listEl || document.getElementById('tasks-list');
   if (!list) return;
   list.innerHTML = '';
-  // Sync the count badges (tab + header).
-  const _tabCount = document.getElementById('tasks-tab-count');
-  if (_tabCount) _tabCount.textContent = _tasks.length;
-  const _headCount = document.getElementById('tasks-head-count');
-  if (_headCount) _headCount.textContent = _tasks.length ? `${_tasks.length} task${_tasks.length !== 1 ? 's' : ''}` : '';
+  if (!scoped) {
+    // Sync the count badges (tab + header).
+    const _tabCount = document.getElementById('tasks-tab-count');
+    if (_tabCount) _tabCount.textContent = _tasks.length;
+    const _headCount = document.getElementById('tasks-head-count');
+    if (_headCount) _headCount.textContent = _tasks.length ? `${_tasks.length} task${_tasks.length !== 1 ? 's' : ''}` : '';
+  }
 
-  if (_tasks.length === 0) {
+  if (source.length === 0) {
     // Differentiate "still loading" from "really empty" so the first paint
     // shows the app whirlpool (matching the document library) rather than a
     // misleading "No tasks yet" message before the fetch completes.
-    if (!_tasksFetched) {
+    if (!scoped && !_tasksFetched) {
       list.appendChild(spinnerModule.createLoadingRow('Loading…'));
     } else {
-      list.innerHTML = '<div style="opacity:0.4;font-size:12px;text-align:center;padding:24px 0;">No tasks yet. Create one to get started.</div>';
+      list.innerHTML = '<div style="font-size:12px;text-align:center;padding:24px 0;display:flex;flex-direction:column;align-items:center;gap:12px;">'
+        + '<span style="opacity:0.5;">No tasks yet.</span>'
+        + (scoped ? '' : '<button class="memory-toolbar-btn" id="tasks-empty-new-btn" style="padding:6px 12px;">+ New task</button>')
+        + '</div>';
+      if (!scoped) document.getElementById('tasks-empty-new-btn')?.addEventListener('click', () => _switchTab('new'));
     }
     return;
   }
 
-  _renderTaskChips();
+  if (!scoped) _renderTaskChips();
 
-  // Filter by the active category tag + search query, then flatten into one
-  // list (the tag chips replace the old per-category collapsible headers).
-  const q = _taskSearch.trim().toLowerCase();
-  const visible = _tasks.filter(t => {
-    if (_taskFilter && _categoryFor(t) !== _taskFilter) return false;
+  // Filter by the active category tag + search query (main tab only).
+  const q = scoped ? '' : _taskSearch.trim().toLowerCase();
+  const visible = source.filter(t => {
+    if (!scoped && _taskFilter && _categoryFor(t) !== _taskFilter) return false;
     if (q && !(`${t.name} ${t.prompt || ''} ${t.action || ''}`.toLowerCase().includes(q))) return false;
     return true;
   });
@@ -663,7 +687,7 @@ function _renderList() {
     const builtinBadge = task.is_builtin
       ? `<span class="task-builtin-badge${task.is_modified ? ' modified' : ''}" title="${task.is_modified ? 'Built-in task — edited from its default' : 'Built-in task'}">built-in${task.is_modified ? ' · edited' : ''}</span>`
       : '';
-    titleRow.innerHTML = `${_taskIcon(task)}<span class="memory-item-title">${_esc(task.name)}</span>${builtinBadge}<span style="flex:1;"></span>${statusBadge}`;
+    titleRow.innerHTML = `${_taskIcon(task)}<span class="memory-item-title">${_esc(task.name)}</span>${builtinBadge}${_agentChipHtml(task)}<span style="flex:1;"></span>${statusBadge}`;
 
     // ... menu button (hover to show)
     const actionsWrap = document.createElement('div');
@@ -819,13 +843,19 @@ function _renderList() {
   // hitting the early-return ALSO clears the flag, so creating a first task
   // afterwards won't replay the cascade — keeps the entrance scoped to the
   // very first render of the panel.
-  if (_tasksCascadeNext && list.children.length) {
+  if (!scoped && _tasksCascadeNext && list.children.length) {
     list.classList.remove('tasks-just-opened');
     void list.offsetWidth;  // force reflow so the class re-fires on re-add
     list.classList.add('tasks-just-opened');
     setTimeout(() => list.classList.remove('tasks-just-opened'), 900);
   }
-  _tasksCascadeNext = false;
+  if (!scoped) _tasksCascadeNext = false;
+}
+
+// ---- Reusable renderers for the per-agent dashboard (agents.js) ----
+// Render the EXACT same task cards as the main Tasks tab into any container.
+export function renderTaskList(container, tasks) {
+  _renderList({ listEl: container, tasks: tasks || [] });
 }
 
 function _btn(label, onClick) {
@@ -931,6 +961,12 @@ function _presetIcon(p) {
 function _showPresetPicker() {
   const modal = document.getElementById('tasks-modal');
   if (!modal) return;
+  // Keep the Add task tab active + bar visible even when reached directly.
+  _activeTab = 'new';
+  modal.querySelectorAll('.tasks-tab').forEach(b => { const on = b.dataset.tab === 'new'; b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+  const _ptbar = modal.querySelector('.tasks-tabs');
+  if (_ptbar) _ptbar.style.display = '';
+  document.querySelectorAll('.agent-nav-item').forEach(it => it.classList.toggle('active', it.dataset.agentTab === 'tasks'));
   const body = modal.querySelector('.modal-body');
   if (!body) return;
 
@@ -1009,6 +1045,11 @@ function _showForm(existing, initTaskType, initTriggerType) {
       </div>
 
       <div id="task-form-trigger-opts"></div>
+
+      <label class="task-form-label">Agent <span style="opacity:0.5;font-weight:normal;font-size:10px;">(who runs this task)</span></label>
+      <select id="task-form-agent" class="task-form-input">
+        <option value="">Default assistant</option>
+      </select>
 
       <label class="task-form-label">Output</label>
       <select id="task-form-output" class="task-form-input">
@@ -1324,6 +1365,25 @@ function _showForm(existing, initTaskType, initTriggerType) {
     })
     .catch(() => {});
 
+  // Populate agent dropdown (which agent the task runs as).
+  fetch(`${API_BASE}/api/agents`, { credentials: 'same-origin' })
+    .then(r => r.json())
+    .then(data => {
+      const agentSel = document.getElementById('task-form-agent');
+      if (!agentSel) return;
+      const preset = (existing && existing.crew_member_id) || _pendingNewTaskCrewId || '';
+      for (const a of (data.agents || [])) {
+        if (a.is_default_assistant) continue;  // "Default assistant" is option 0
+        const opt = document.createElement('option');
+        opt.value = a.id;
+        opt.textContent = a.name;
+        if (a.id === preset) opt.selected = true;
+        agentSel.appendChild(opt);
+      }
+      _pendingNewTaskCrewId = null;  // consume the one-shot pre-bind
+    })
+    .catch(() => { _pendingNewTaskCrewId = null; });
+
   // Populate chain dropdown
   const chainSel = document.getElementById('task-form-chain');
   if (chainSel) {
@@ -1376,6 +1436,8 @@ function _showForm(existing, initTaskType, initTriggerType) {
       output_target: outputTarget,
     };
     if (nameEl) payload.name = nameEl.value.trim() || undefined;
+    // Agent the task runs as (empty string = default assistant / unbind).
+    payload.crew_member_id = document.getElementById('task-form-agent')?.value ?? '';
 
     // Model / endpoint override. Blank = inherit session default. Otherwise
     // value is `endpoint_url::model_id`.
@@ -1693,6 +1755,15 @@ function _syncPauseAllButton() {
 
 let _activeTab = 'tasks';
 
+// Move a portaled panel node back into its hidden holder before a body wipe
+// would destroy it (the node's listeners are bound once at boot, so it must
+// survive being moved around).
+function _parkAgentPanel(id, holderId) {
+  const p = document.getElementById(id);
+  const h = document.getElementById(holderId);
+  if (p && h && p.parentElement !== h) h.appendChild(p);
+}
+
 function _switchTab(tab) {
   _activeTab = tab;
   const modal = document.getElementById('tasks-modal');
@@ -1702,9 +1773,70 @@ function _switchTab(tab) {
     b.setAttribute('aria-selected', on ? 'true' : 'false');
     b.classList.toggle('active', on);
   });
-  if (tab === 'tasks') _renderMainView();
+  // Show the Library-style tab bar for the current context:
+  //   Tasks · Add task  (tasks/new)   |   Skills · Add skill  (skills/skill-add)
+  // Soul/Activity are full views with no tab bar (navigated from the sidebar).
+  const _tBar = modal.querySelector('.tasks-tabs');
+  const _sBar = modal.querySelector('.skills-tabs');
+  if (_tBar) _tBar.style.display = (tab === 'tasks' || tab === 'new') ? '' : 'none';
+  if (_sBar) _sBar.style.display = (tab === 'skills' || tab === 'skill-add') ? '' : 'none';
+  // Sidebar highlight: Add task → Tasks, Add skill → Skills.
+  const _navTab = (tab === 'new') ? 'tasks' : (tab === 'skill-add') ? 'skills' : tab;
+  document.querySelectorAll('.agent-nav-item').forEach(it => {
+    it.classList.toggle('active', it.dataset.agentTab === _navTab);
+  });
+  // Park portaled panels before any body.innerHTML wipe destroys them.
+  if (tab !== 'skills') _parkAgentPanel('skills-panel', 'agent-skills-holder');
+  if (tab !== 'skill-add') _parkAgentPanel('add-skill-panel', 'agent-add-skill-holder');
+  if (tab === 'soul') _renderSoulView();
+  else if (tab === 'tasks') _renderMainView();
+  else if (tab === 'skills') _renderSkillsView();
+  else if (tab === 'skill-add') _renderAddSkillView();
   else if (tab === 'activity') _renderActivityView();
   else if (tab === 'new') _showPresetPicker();
+}
+
+// ---- Soul view (the agent's persona — reuses assistant.js) ----
+function _renderSoulView() {
+  const modal = document.getElementById('tasks-modal');
+  const body = modal?.querySelector('.modal-body');
+  if (!body) return;
+  body.innerHTML = '<div id="agent-soul-body" style="flex:1;min-height:0;overflow:auto;"></div>';
+  mountSoul(document.getElementById('agent-soul-body'));
+}
+
+// ---- Skills view (portal the live skills panel into the modal body) ----
+function _renderSkillsView() {
+  const modal = document.getElementById('tasks-modal');
+  const body = modal?.querySelector('.modal-body');
+  if (!body) return;
+  body.innerHTML = '';
+  const panel = document.getElementById('skills-panel');
+  if (panel) {
+    panel.style.display = '';
+    panel.style.flex = '1';
+    panel.style.minHeight = '0';
+    body.appendChild(panel);
+    try { skillsModule.loadSkills(true); } catch (_) {}
+  } else {
+    body.innerHTML = '<div style="opacity:0.5;padding:24px;text-align:center;">Skills panel unavailable.</div>';
+  }
+}
+
+// ---- Add skill view (portal the live Add Skill form into the modal body) ----
+function _renderAddSkillView() {
+  const modal = document.getElementById('tasks-modal');
+  const body = modal?.querySelector('.modal-body');
+  if (!body) return;
+  body.innerHTML = '<div id="agent-add-skill-wrap" style="flex:1;min-height:0;overflow:auto;"></div>';
+  const wrap = document.getElementById('agent-add-skill-wrap');
+  const panel = document.getElementById('add-skill-panel');
+  if (panel && wrap) {
+    panel.style.display = '';
+    wrap.appendChild(panel);
+  } else {
+    body.innerHTML = '<div style="opacity:0.5;padding:24px;text-align:center;">Add-skill form unavailable.</div>';
+  }
 }
 
 // ---- Activity view (assistant session log) ----
@@ -1836,32 +1968,7 @@ async function _renderActivityView() {
       list.innerHTML = '<div style="opacity:0.5;padding:12px;">No activity yet. Scheduled tasks will log here once they run.</div>';
       return;
     }
-    _activityEntries = runs.map(r => {
-      let resultText = r.result || r.error || '';
-      if (!resultText) {
-        if (r.status === 'queued')  resultText = '_Queued — waiting for a free slot…_';
-        if (r.status === 'running') resultText = '_Running…_';
-      }
-      return {
-        // Surface the actual task_type ('llm' | 'research' | 'action') so the
-        // chat-worthy check in _renderActivityEntry can decide between "Open
-        // in chat" (llm/research) and "Copy log" (action). Was hardcoded
-        // 'task', which never matched and made Open-in-chat dead code.
-        kind: r.task_type || 'llm',
-        taskName: r.task_name || (r.task_type === 'action' ? (r.action || 'Action') : 'Task'),
-        taskId: r.task_id,
-        action: r.action || '',
-        result: resultText,
-        prompt: '',
-        ts: r.finished_at || r.started_at,
-        status: r.status,
-        model: r.model || '',
-        endpointUrl: r.endpoint_url || '',
-        sessionId: r.session_id || '',
-        researchId: r.research_id || '',
-        output_target: r.output_target || 'session',
-      };
-    });
+    _activityEntries = _runsToEntries(runs);
     _buildChips();
     _applyFilter();
   } catch (e) {
@@ -1871,6 +1978,46 @@ async function _renderActivityView() {
 }
 
 let _activityEntries = [];
+
+// Normalize raw /api/tasks/runs/recent rows into the activity-entry shape the
+// renderer expects. Shared by the main Activity tab and the per-agent dashboard.
+function _runsToEntries(runs) {
+  return (runs || []).map(r => {
+    let resultText = r.result || r.error || '';
+    if (!resultText) {
+      if (r.status === 'queued')  resultText = '_Queued — waiting for a free slot…_';
+      if (r.status === 'running') resultText = '_Running…_';
+    }
+    return {
+      kind: r.task_type || 'llm',
+      taskName: r.task_name || (r.task_type === 'action' ? (r.action || 'Action') : 'Task'),
+      taskId: r.task_id,
+      action: r.action || '',
+      result: resultText,
+      prompt: '',
+      ts: r.finished_at || r.started_at,
+      status: r.status,
+      model: r.model || '',
+      endpointUrl: r.endpoint_url || '',
+      sessionId: r.session_id || '',
+      researchId: r.research_id || '',
+      output_target: r.output_target || 'session',
+    };
+  });
+}
+
+// Render the EXACT same activity entries as the main Activity tab into any
+// container (per-agent dashboard). Pass raw /runs/recent rows.
+export function renderActivityRunsInto(container, runs) {
+  if (!container) return;
+  const entries = _runsToEntries(runs);
+  if (!entries.length) {
+    container.innerHTML = '<div style="opacity:0.5;padding:12px;">No activity yet — assign this agent a task.</div>';
+    return;
+  }
+  container.innerHTML = _stackActivityEntries(entries).map(_renderActivityEntry).join('');
+  _wireActivityRows(container);
+}
 
 function _stackActivityEntries(entries) {
   const out = [];
@@ -2392,6 +2539,13 @@ function _renderMainView() {
   const body = modal.querySelector('.modal-body');
   if (!body) return;
 
+  // Keep the Tasks/Add tab bar in sync even when reached directly (save/cancel).
+  _activeTab = 'tasks';
+  modal.querySelectorAll('.tasks-tab').forEach(b => { const on = b.dataset.tab === 'tasks'; b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+  const _tbar = modal.querySelector('.tasks-tabs');
+  if (_tbar) _tbar.style.display = '';
+  document.querySelectorAll('.agent-nav-item').forEach(it => it.classList.toggle('active', it.dataset.agentTab === 'tasks'));
+
   body.innerHTML = `
     <div class="admin-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;top:-2px;">
       <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">
@@ -2450,10 +2604,12 @@ function _renderMainView() {
 
 // ---- Modal ----
 
-export function openTasks(focusId) {
+export function openTasks(focusId, initialTab, newTaskCrewId) {
+  if (newTaskCrewId) _pendingNewTaskCrewId = newTaskCrewId;
   if (_open) {
-    // Already open — just focus the requested task.
-    if (focusId) _focusTask(focusId);
+    // Already open — switch to the requested sub-tab and/or focus a task.
+    if (initialTab) _switchTab(initialTab);
+    if (focusId) { if (_activeTab !== 'tasks') _switchTab('tasks'); _focusTask(focusId); }
     return;
   }
   _pendingFocusTaskId = focusId || null;
@@ -2470,22 +2626,31 @@ export function openTasks(focusId) {
   modal.innerHTML = `
     <div class="modal-content tasks-modal-content">
       <div class="modal-header">
-        <h4 style="position:relative;top:-2px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3L2 6"/><path d="M22 6l-3-3"/></svg>Tasks</h4>
+        <h4 style="position:relative;top:-2px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Agent</h4>
         <span style="flex:1"></span>
         <button class="close-btn" id="tasks-close">✖</button>
       </div>
-      <div class="memory-tabs tasks-tabs" role="tablist">
+      <!-- Library-style tab bar, shown only in the Tasks context (Tasks list /
+           Add task). Soul/Skills/Activity are navigated from the left sidebar. -->
+      <div class="memory-tabs tasks-tabs" role="tablist" style="display:none">
         <button class="memory-tab tasks-tab active" data-tab="tasks" role="tab" aria-selected="true">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
           Tasks <span id="tasks-tab-count" class="memory-count" style="font-size:0.8em;opacity:0.6;font-weight:normal;margin-left:4px">0</span>
         </button>
-        <button class="memory-tab tasks-tab" data-tab="activity" role="tab" aria-selected="false">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-          Activity
-        </button>
         <button class="memory-tab tasks-tab" data-tab="new" role="tab" aria-selected="false">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-          Add
+          Add task
+        </button>
+      </div>
+      <!-- Library-style tab bar for the Skills context (Skills list / Add skill). -->
+      <div class="memory-tabs skills-tabs" role="tablist" style="display:none">
+        <button class="memory-tab tasks-tab active" data-tab="skills" role="tab" aria-selected="true">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Skills
+        </button>
+        <button class="memory-tab tasks-tab" data-tab="skill-add" role="tab" aria-selected="false">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          Add skill
         </button>
       </div>
       <div class="modal-body" style="display:flex;flex-direction:column;gap:10px;overflow:hidden;"></div>
@@ -2556,10 +2721,14 @@ export function openTasks(focusId) {
   // populated shell (header/search/sort/empty list with a spinner row) instead
   // of an empty modal-body that fills in after the fetch resolves — that delay
   // was visible as a "flicker" right after opening.
-  _activeTab = 'tasks';
-  _switchTab('tasks');
+  // The Agent hub opens on its "Soul" (persona) by default; callers can land on
+  // any sub-tab (e.g. the header gear opens 'soul', a task deep-link 'tasks').
+  const _startTab = (focusId ? 'tasks' : (initialTab || 'soul'));
+  _activeTab = _startTab;
+  _switchTab(_startTab);
   _fetchTasks().then(() => {
-    // Re-render so the list swaps the Loading row for real cards.
+    // Re-render so the list swaps the Loading row for real cards (no-op if the
+    // Tasks sub-tab isn't currently mounted — _renderList guards on #tasks-list).
     _renderList();
     _syncPauseAllButton();
     if (_pendingFocusTaskId) {
@@ -2571,6 +2740,7 @@ export function openTasks(focusId) {
 }
 
 let _pendingFocusTaskId = null;
+let _pendingNewTaskCrewId = null;   // one-shot: pre-bind a new task to an agent
 
 // Scroll to + briefly highlight a task card by id. Used by the chat
 // anchor-link delegate ([Name](#task-<id>)).
@@ -2592,6 +2762,12 @@ export function closeTasks() {
   if (!_open) return;
   _open = false;
   _viewingRuns = null;
+  // Rescue the portaled panels back to their hidden holders before the modal is
+  // removed from the DOM (otherwise the nodes + their boot-wired listeners die).
+  _parkAgentPanel('skills-panel', 'agent-skills-holder');
+  _parkAgentPanel('add-skill-panel', 'agent-add-skill-holder');
+  // Clear the sidebar Agent-nav active highlight.
+  document.querySelectorAll('.agent-nav-item.active').forEach(it => it.classList.remove('active'));
   const modal = document.getElementById('tasks-modal');
   if (modal) {
     const content = modal.querySelector('.modal-content');
@@ -2673,6 +2849,6 @@ function stopNotificationPolling() {
 // Start polling on module load
 startNotificationPolling();
 
-const tasksModule = { openTasks, closeTasks, isTasksOpen, startNotificationPolling, stopNotificationPolling };
+const tasksModule = { openTasks, closeTasks, isTasksOpen, startNotificationPolling, stopNotificationPolling, renderTaskList, renderActivityRunsInto };
 export default tasksModule;
 window.tasksModule = tasksModule;

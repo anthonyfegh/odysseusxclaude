@@ -85,6 +85,14 @@ _REPLY_GIVE_UP_PATTERNS = [
     re.compile(r"\b[Cc]ould you (?:tell me|specify|clarify)\b"),
     re.compile(r"\bunable to (?:open|find|switch|complete)\b", re.IGNORECASE),
     re.compile(r"\bdoesn'?t (?:exist|appear to be|seem to)\b", re.IGNORECASE),
+    # The model refuses by claiming it lacks a capability it actually has
+    # (e.g. it has web_search but says "I cannot browse the internet"), or
+    # stalls by offering a menu of options instead of doing the work.
+    re.compile(r"\bI can(?:'t|not) (?:browse|access|reach|retrieve|fetch|look up|search)\b", re.IGNORECASE),
+    re.compile(r"\bmy (?:knowledge|training) (?:is|was|may be|cuts? off)\b", re.IGNORECASE),
+    re.compile(r"\bwhich (?:option|approach|one) (?:do you|would you|works)\b", re.IGNORECASE),
+    re.compile(r"\bOption [ABC]\b"),
+    re.compile(r"\bwhich approach (?:works|do you|would you)\b", re.IGNORECASE),
 ]
 
 
@@ -363,6 +371,99 @@ def _format_trace(tool_results: List[Dict[str, Any]], agent_reply: str) -> str:
     # Fence the trace so the teacher prompt's untrusted-data guard has explicit
     # boundaries to point at. Content inside is data, not instructions.
     return f"<<<UNTRUSTED_TRACE>>>\n{trace}\n<<<END_UNTRUSTED_TRACE>>>"
+
+
+# ── Task teacher: recover a TASK run that gave up (Opus 4.8 via the sidecar) ──
+#
+# Unlike the chat teacher above (which resolves an arbitrary `teacher_model`
+# endpoint and can hit a direct API), the TASK teacher routes ONLY through the
+# local `claude -p` sidecar — the subscription-billed endpoint. If the sidecar
+# is unavailable we skip escalation entirely; we never fall back to a direct API.
+SIDECAR_ENDPOINT_ID = "claude-cli-sidecar"
+
+_TASK_TEACHER_SYSTEM_PROMPT = (
+    "You are a senior AI operator reviewing a background TASK that an agent failed "
+    "to complete. The agent gave up or stalled instead of doing the work — often by "
+    "claiming it lacks a capability it actually HAS (e.g. saying it 'cannot browse "
+    "the internet' when it has a web_search tool), or by offering the user a menu of "
+    "options instead of acting. Write concise, concrete guidance telling the agent "
+    "exactly how to complete THIS task autonomously using the tools it actually has. "
+    "Be direct and practical. No preamble."
+)
+
+_TASK_TEACHER_REWRITE_PROMPT = """\
+A scheduled task's agent run FAILED to do the work. Rewrite the approach.
+
+THE TASK (what must be done)
+{user_request}
+
+TOOLS THE AGENT ACTUALLY HAS (it can call any of these — it must USE them, not refuse)
+{available_tools}
+
+WHY THE RUN FAILED
+{failure_reason}
+
+{untrusted_trace_guard}
+
+WHAT THE AGENT PRODUCED (the failed / give-up output)
+{trace}
+
+YOUR JOB
+Write GUIDANCE the agent must follow to actually complete this task in one autonomous run, using its real tools. Be specific: which tools to call, in what order, what to gather, and how to structure the final output. If the agent refused for a reason that is false given its tools (e.g. it claimed it "cannot browse the internet" but it has web_search), call that out and tell it to use the tool. Do NOT ask the user clarifying questions and do NOT offer option menus — the task runs unattended and must finish on its own.
+
+Output ONE fenced json block and nothing else:
+```json
+{{"guidance": "<concrete, imperative how-to for completing this task with the available tools; 3-8 sentences>"}}
+```"""
+
+
+def _extract_guidance_json(teacher_response: str) -> Optional[str]:
+    """Pull the `guidance` string out of the teacher's fenced JSON. Returns None
+    if there's no JSON block or no usable guidance (teacher declined)."""
+    data = _extract_skill_json(teacher_response)
+    if not isinstance(data, dict):
+        return None
+    g = data.get("guidance")
+    return g.strip() if isinstance(g, str) and g.strip() else None
+
+
+async def task_teacher_guidance(
+    task_prompt: str,
+    available_tools_desc: str,
+    failed_result: str,
+    failure_reason: str,
+    tool_results: List[Dict[str, Any]],
+    teacher_model: str = "claude-opus-4-8",
+) -> Optional[str]:
+    """Ask the teacher (Opus 4.8 via the claude -p sidecar) for guidance on
+    redoing a task that gave up. Returns the guidance string, or None to skip
+    (sidecar unavailable / teacher emitted no JSON). Routes ONLY through the
+    sidecar — never a direct API."""
+    from src.endpoint_resolver import resolve_endpoint_by_id
+    from src.llm_core import llm_call_async
+    resolved = resolve_endpoint_by_id(SIDECAR_ENDPOINT_ID, (teacher_model or "claude-opus-4-8").strip())
+    if not resolved:
+        logger.info("task teacher: sidecar endpoint %r unavailable — skipping escalation", SIDECAR_ENDPOINT_ID)
+        return None
+    url, model, headers = resolved
+    prompt = _TASK_TEACHER_REWRITE_PROMPT.format(
+        user_request=task_prompt or "(no prompt)",
+        available_tools=available_tools_desc or "(none listed)",
+        failure_reason=failure_reason or "(unspecified)",
+        untrusted_trace_guard=_UNTRUSTED_TRACE_GUARD,
+        trace=_format_trace(tool_results, failed_result),
+    )
+    try:
+        resp = await llm_call_async(
+            url, model,
+            [{"role": "system", "content": _TASK_TEACHER_SYSTEM_PROMPT},
+             {"role": "user", "content": prompt}],
+            headers=headers, timeout=180,
+        )
+    except Exception as e:
+        logger.warning("task teacher call failed: %s", e)
+        return None
+    return _extract_guidance_json(resp)
 
 
 async def escalate_and_learn(

@@ -93,7 +93,7 @@ export function initKeyboardShortcuts(modules) {
   const _WINDOW_TRIGGERS = {
     'settings-modal':         'user-bar-settings',
     'theme-modal':            'tool-theme-btn',
-    'tasks-modal':            'tool-tasks-btn',
+    'tasks-modal':            'agent-nav-tasks',
     'notes-panel':            'tool-notes-btn',
     'memory-modal':           'tool-memory-btn',
     'doclib-modal':           'tool-library-btn',
@@ -266,7 +266,7 @@ export function initKeyboardShortcuts(modules) {
       open_library:  'tool-library-btn',
       open_memory:   'tool-memory-btn',
       open_notes:    'tool-notes-btn',
-      open_tasks:    'tool-tasks-btn',
+      open_tasks:    'agent-nav-tasks',
       open_theme:    'tool-theme-btn',
     };
     for (const action in _toolBtns) {

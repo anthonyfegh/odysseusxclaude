@@ -30,6 +30,17 @@ async def _drain_agent(sess, messages):
     (final_prose, tool_events) — tool_events in the same shape the live chat
     saves, so the frontend rebuilds them as standard agent-thread tool cards."""
     from src.agent_loop import stream_agent_loop
+    # If this session is bound to an agent, the follow-up runs in that agent's
+    # sandbox folder too — consistent with the chat and task seams.
+    _ws = None
+    try:
+        from src import crew_service
+        from src.agent_workspace import workspace_root as _awr
+        _crew = crew_service.resolve_session_crew(sess.id, getattr(sess, "owner", None))
+        if _crew:
+            _ws = _awr(_crew.id)
+    except Exception:
+        _ws = None
     full = ""
     tool_events = []
     round_num = 1
@@ -40,6 +51,7 @@ async def _drain_agent(sess, messages):
         session_id=sess.id,
         max_rounds=_FOLLOWUP_MAX_ROUNDS,
         owner=getattr(sess, "owner", None),
+        workspace_root=_ws,
     ):
         if not chunk.startswith("data: "):
             continue

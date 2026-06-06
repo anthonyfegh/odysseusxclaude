@@ -1379,7 +1379,7 @@ const _AUTO_WIRE = {
   'cookbook-modal':       { rail: 'rail-cookbook',  sidebar: 'tool-cookbook-btn' },
   'calendar-modal':       { rail: 'rail-calendar',  sidebar: 'tool-calendar-btn' },
   'gallery-modal':        { rail: 'rail-gallery',   sidebar: 'tool-gallery-btn' },
-  'tasks-modal':          { rail: 'rail-tasks',     sidebar: 'tool-tasks-btn' },
+  'tasks-modal':          { rail: 'rail-tasks',     sidebar: 'agent-nav-tasks' },
   'doclib-modal':         { rail: 'rail-archive',   sidebar: 'tool-library-btn' },
   'memory-modal':         { rail: null,             sidebar: 'tool-memory-btn' },
   'notes-panel':          { rail: 'rail-notes',     sidebar: 'tool-notes-btn' },
