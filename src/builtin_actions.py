@@ -535,6 +535,17 @@ async def action_classify_events(owner: str, **kwargs) -> Tuple[str, bool]:
     obvious cases, LLM fallback for ambiguous ones. Assigns event_type +
     importance + color. Re-classifies anything not already set."""
     try:
+        # Activity transcript: record the agent's work as {"k":...} steps (same
+        # schema as the agent loop) so the run's "Show details" expander can
+        # replay it. No-op when called without a sink (direct callers / tests).
+        on_step = kwargs.get("on_step")
+        def _step(d):
+            if callable(on_step):
+                try:
+                    on_step(d)
+                except Exception:
+                    pass
+
         from datetime import timedelta
         from core.database import SessionLocal, CalendarEvent
         from src.endpoint_resolver import resolve_endpoint
@@ -557,6 +568,9 @@ async def action_classify_events(owner: str, **kwargs) -> Tuple[str, bool]:
             if not llm_url:
                 llm_url, llm_model, llm_headers = resolve_endpoint("default")
             llm_available = bool(llm_url and llm_model)
+            _step({"k": "text", "text":
+                   f"Scanning {len(events)} upcoming event(s) for classification (next 30 days). "
+                   f"LLM model: {llm_model if llm_available else 'unavailable (heuristic only)'}."})
 
             # Pull user memories so the LLM has personal context (relationships,
             # job, hobbies). Helps it know e.g. "<name> is your spouse" so their
@@ -606,17 +620,30 @@ async def action_classify_events(owner: str, **kwargs) -> Tuple[str, bool]:
                 db.commit()
             except Exception:
                 pass
+            _step({"k": "text", "text":
+                   f"Heuristic pass: {classified_h} classified, {unchanged} already set, "
+                   f"{len(llm_queue)} queued for the LLM."})
 
             # Pass 2: batch LLM classification (10 events per call)
             BATCH = 10
             for i in range(0, len(llm_queue), BATCH):
                 batch = llm_queue[i:i+BATCH]
+                _batch_round = i // BATCH + 1
                 items = [
                     {"i": idx, "title": (ev.summary or "")[:120],
                      "when": ev.dtstart.isoformat() if ev.dtstart else "",
                      "loc": (ev.location or "")[:80]}
                     for idx, ev in enumerate(batch)
                 ]
+                _cmd_lines = [
+                    f"{it['i']}. {it['title']!r}"
+                    + (f" @ {it['when'][:16]}" if it['when'] else "")
+                    + (f" ({it['loc']})" if it['loc'] else "")
+                    for it in items
+                ]
+                _step({"k": "tool_start", "tool": "classify_llm", "round": _batch_round,
+                       "command": "Classifying batch of {} event(s):\n{}".format(
+                           len(batch), "\n".join(_cmd_lines))})
                 prompt = (
                     _memory_context +
                     "Classify these calendar events using the USER CONTEXT above (people they know, "
@@ -650,6 +677,9 @@ async def action_classify_events(owner: str, **kwargs) -> Tuple[str, bool]:
                     if not m:
                         logger.warning(f"[classify-llm] no JSON array in response: {raw[:300]!r}")
                         failed += len(batch)
+                        _step({"k": "tool_output", "tool": "classify_llm", "round": _batch_round,
+                               "exit_code": 1,
+                               "output": f"No JSON array in model response:\n{raw[:400]}"})
                         continue
                     arr = _json.loads(m.group())
                     by_idx = {x.get("i"): x for x in arr if isinstance(x, dict)}
@@ -667,9 +697,24 @@ async def action_classify_events(owner: str, **kwargs) -> Tuple[str, bool]:
                             ev.importance = imp
                         classified_llm += 1
                         logger.info(f"[classify-llm] '{ev.summary}' → type={t} importance={imp}")
+                    _out_lines = []
+                    for idx, ev in enumerate(batch):
+                        x = by_idx.get(idx)
+                        if x:
+                            _out_lines.append(
+                                f"{idx}. {(ev.summary or '')[:80]!r} → type={x.get('type','?')} "
+                                f"importance={x.get('importance','?')}")
+                        else:
+                            _out_lines.append(f"{idx}. {(ev.summary or '')[:80]!r} → (no result)")
+                    _step({"k": "tool_output", "tool": "classify_llm", "round": _batch_round,
+                           "exit_code": 0,
+                           "output": "Model JSON:\n{}\n\nApplied:\n{}".format(
+                               m.group(), "\n".join(_out_lines))})
                 except Exception as e:
                     logger.warning(f"[classify-llm] batch failed: {e}")
                     failed += len(batch)
+                    _step({"k": "tool_output", "tool": "classify_llm", "round": _batch_round,
+                           "exit_code": 1, "output": f"Batch failed: {e}"})
                 # Commit after each batch so partial progress persists
                 try:
                     db.commit()
@@ -686,6 +731,7 @@ async def action_classify_events(owner: str, **kwargs) -> Tuple[str, bool]:
                 parts.append(f"{unchanged} already set (skipped)")
             if failed:
                 parts.append(f"{failed} LLM failed")
+            _step({"k": "text", "text": "Done. " + " · ".join(parts)})
             return " · ".join(parts), True
         finally:
             db.close()

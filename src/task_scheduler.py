@@ -919,12 +919,47 @@ class TaskScheduler:
             return f"Unknown action: {task.action}", False
 
         from src.builtin_actions import TaskNoop
+
+        # Reusable step-sink: actions that opt in (by reading the on_step kwarg)
+        # record a {"k":...} timeline in the SAME format the agent loop produces
+        # (see _run_agent_loop ~1690), so the generic persister at the end of
+        # _execute_task_locked stores it to run.steps and the Activity view can
+        # render the full work. Actions that ignore on_step leave steps empty →
+        # _last_run_steps stays None → no expander, summary unchanged.
+        _action_steps: list = []
+        _MAX_ACTION_STEPS = 500
+
+        def _cap_step_field(v, n=2000):
+            if not isinstance(v, str):
+                try:
+                    v = json.dumps(v)
+                except Exception:
+                    v = str(v)
+            return v if len(v) <= n else v[:n] + "…"
+
+        def _on_step(step: dict):
+            try:
+                if not isinstance(step, dict) or "k" not in step:
+                    return
+                if len(_action_steps) >= _MAX_ACTION_STEPS:
+                    return
+                if "command" in step:
+                    step["command"] = _cap_step_field(step.get("command"), 2000)
+                if "output" in step:
+                    step["output"] = _cap_step_field(step.get("output"), 2000)
+                if "text" in step:
+                    step["text"] = _cap_step_field(step.get("text"), 8000)
+                _action_steps.append(step)
+            except Exception:
+                pass
+
         try:
             # Pass task prompt as script/command for ssh_command/run_script actions.
             def _progress(message: str):
                 self._set_run_progress(run_id, message)
 
-            kwargs = {"owner": task.owner, "task_name": task.name, "progress_cb": _progress}
+            kwargs = {"owner": task.owner, "task_name": task.name,
+                      "progress_cb": _progress, "on_step": _on_step}
             if task.action in ("run_script", "run_local", "ssh_command") and task.prompt:
                 kwargs["script" if task.action in ("run_script", "run_local") else "command"] = task.prompt
             result, success = await action_fn(**kwargs)
@@ -935,6 +970,10 @@ class TaskScheduler:
         except Exception as e:
             logger.error(f"Action '{task.action}' failed: {e}")
             return str(e), False
+        finally:
+            # Hand any captured timeline to the generic persister (run.steps).
+            # None when the action recorded nothing.
+            self._last_run_steps = _action_steps or None
 
     # ── Check-in source discovery ──
     # Pattern-based: if an MCP server has a tool matching a pattern, it becomes

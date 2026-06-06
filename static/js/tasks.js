@@ -9,6 +9,7 @@ import { makeWindowDraggable } from './windowDrag.js';
 import { sortModelIds } from './modelSort.js';
 import { mountSoul } from './assistant.js';   // Agent "soul" (persona) sub-view
 import skillsModule from './skills.js';        // Agent "skills" sub-view
+import { fetchAndRenderRunSteps } from './runSteps.js';  // Activity step-transcript renderer
 
 const API_BASE = window.location.origin;
 let _open = false;
@@ -1992,6 +1993,8 @@ function _runsToEntries(runs) {
       kind: r.task_type || 'llm',
       taskName: r.task_name || (r.task_type === 'action' ? (r.action || 'Action') : 'Task'),
       taskId: r.task_id,
+      runId: r.id,                  // for the step-transcript fetch
+      hasSteps: !!r.has_steps,      // gate the "Show details" expander
       action: r.action || '',
       result: resultText,
       prompt: '',
@@ -2121,7 +2124,13 @@ function _wireActivityRows(list) {
     // Click anywhere on the row to toggle expand.
     // Buttons inside still get their own handlers via stopPropagation.
     if (!row.classList.contains('is-skipped')) {
-      row.addEventListener('click', () => row.classList.toggle('expanded'));
+      row.addEventListener('click', (e) => {
+        // Clicks inside the step transcript (e.g. folding a tool node, which the
+        // global .agent-thread-header handler handles) must not also toggle the
+        // row's own expand state.
+        if (e.target.closest('.task-log-steps')) return;
+        row.classList.toggle('expanded');
+      });
     }
     row.querySelector('.task-log-row-toggle')?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -2163,6 +2172,19 @@ function _wireActivityRows(list) {
       const idx = parseInt(row.dataset.entryIdx, 10);
       const entry = _activityEntries[idx];
       if (entry?.taskId) _doRunNow(entry.taskId);
+    });
+    row.querySelector('.task-log-details')?.addEventListener('click', async (e) => {
+      e.stopPropagation();   // don't toggle the row's own expand state
+      const mount = row.querySelector('.task-log-steps');
+      if (!mount) return;
+      const btn = e.currentTarget;
+      if (!mount.hidden) { mount.hidden = true; btn.textContent = 'Show details'; return; }
+      mount.hidden = false;
+      btn.textContent = 'Hide details';
+      if (mount.dataset.loaded !== '1') {   // lazy-fetch the transcript once
+        mount.dataset.loaded = '1';
+        await fetchAndRenderRunSteps(mount.dataset.runId, mount);
+      }
     });
     row.querySelector('.task-log-copy')?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -2454,6 +2476,15 @@ function _renderActivityEntry(entry) {
       </div>
     `;
   }
+  // Full step-by-step transcript: only when this run captured steps and isn't
+  // mid-run. The summary stays as the collapsed view; details lazy-load on click.
+  const _canDetail = !!(entry.hasSteps && entry.runId && !_isRunning);
+  const detailBtn = _canDetail
+    ? `<button class="task-log-details" type="button" title="Show the full step-by-step activity">Show details</button>`
+    : '';
+  const detailMount = _canDetail
+    ? `<div class="task-log-steps" data-run-id="${_escHtml(entry.runId)}" data-loaded="0" hidden></div>`
+    : '';
   return `
     <div class="task-log-row${long ? ' is-long' : ''}${_isRunning ? ' is-running' : ''}" data-kind="${_escHtml(entry.kind)}" data-entry-idx="${entryIdx}" style="${styleVars}">
       <div class="task-log-row-head">
@@ -2464,9 +2495,11 @@ function _renderActivityEntry(entry) {
         ${rightHtml}
       </div>
       ${(_isRunning && !hasRunningProgress) ? '' : `<div class="task-log-row-body">${resultHtml}</div>`}
+      ${detailMount}
       ${promptHtml}
       <div class="task-log-row-actions">
         ${long ? '<button class="task-log-row-toggle" type="button">Show more</button>' : '<span></span>'}
+        ${detailBtn}
         ${actionBtn}
       </div>
     </div>

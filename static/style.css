@@ -20578,9 +20578,18 @@ body:not(.welcome-ready) #welcome-screen {
 /* Collapsed: body + footer hidden. Expanded: visible. */
 .task-log-row:not(.expanded):not(.is-skipped) .task-log-row-body,
 .task-log-row:not(.expanded):not(.is-skipped) .task-log-row-actions,
+.task-log-row:not(.expanded):not(.is-skipped) .task-log-steps,
 .task-log-row:not(.expanded):not(.is-skipped) .task-log-prompt {
   display: none;
 }
+/* Full step-by-step transcript (the "Show details" expander). Reuses the chat
+   .agent-thread-* / .thinking-section styling; only spacing differs here. */
+.task-log-steps { margin-top: 8px; }
+.task-log-steps[hidden] { display: none; }
+.task-log-steps .task-step-text { margin: 6px 0; }
+.task-log-steps .task-step-note { font-size: 12px; opacity: 0.7; margin: 4px 0; }
+.task-log-steps .task-step-thinking { margin: 6px 0; }
+.task-log-details { cursor: pointer; }
 .task-log-name {
   font-weight: 600;
   /* Pull saturation from the per-row hue but mix with the foreground so the

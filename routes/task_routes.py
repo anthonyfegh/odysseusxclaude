@@ -134,6 +134,9 @@ def _run_to_dict(r: TaskRun) -> dict:
         "error": r.error,
         "tokens_used": r.tokens_used,
         "model": r.model,
+        # Drives the Activity "Show details" expander: only show it when this run
+        # captured a full step transcript (see GET /runs/{id}/steps).
+        "has_steps": bool(r.steps and r.steps not in ("[]", "null")),
     }
 
 
