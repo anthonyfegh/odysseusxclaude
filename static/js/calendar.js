@@ -717,7 +717,7 @@ function _renderEmpty() {
         <line x1="3" y1="10" x2="21" y2="10"/>
       </svg>
       <div class="cal-empty-title">${hasError ? 'Calendar unavailable' : 'No calendars yet'}</div>
-      <div class="cal-empty-msg">${hasError ? _e(_calendarsError) : 'Create a local calendar, import an .ics file, or sync via CalDAV.'}</div>
+      <div class="cal-empty-msg">${hasError ? _e(_calendarsError) : 'Create a local calendar, import an .ics file, subscribe to an .ics feed, or sync via CalDAV.'}</div>
       ${hasError ? `
         <button class="cal-btn cal-btn-primary" id="cal-goto-settings">Open Settings</button>
       ` : `
@@ -2419,7 +2419,7 @@ async function _showCalSettings() {
             </button>
             <span id="cal-settings-sync-status" style="font-size:11px;opacity:0.6;"></span>
           </div>
-          <div style="font-size:10px;opacity:0.4;margin-top:4px;">Pulls events from your CalDAV server. To connect or change CalDAV credentials, open <a href="#" id="cal-settings-open-caldav" style="color:var(--accent, var(--red));text-decoration:none;font-weight:600;">Settings → Integrations</a>.</div>
+          <div style="font-size:10px;opacity:0.4;margin-top:4px;">Pulls events from your CalDAV server and .ics feed subscriptions. To connect or change calendar sources, open <a href="#" id="cal-settings-open-caldav" style="color:var(--accent, var(--red));text-decoration:none;font-weight:600;">Settings → Integrations</a>.</div>
         </div>
       </div>
     </div>

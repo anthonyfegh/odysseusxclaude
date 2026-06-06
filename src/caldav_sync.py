@@ -1,4 +1,4 @@
-"""CalDAV → local SQLite sync.
+"""Remote calendar → local SQLite sync (CalDAV account + .ics feeds).
 
 The Settings UI lets users save CalDAV credentials, but the original
 sync path was removed when calendar storage was migrated to SQLite.
@@ -54,6 +54,83 @@ def _to_utc_naive(dt):
         return dt, False  # naive → treat as local
     # date-only (all-day)
     return datetime(dt.year, dt.month, dt.day), True
+
+
+def _stable_ics_cal_id(feed_url: str) -> str:
+    """Deterministic local id for an .ics subscription feed — same URL
+    always maps to the same local row across restarts and re-syncs."""
+    h = hashlib.sha256(feed_url.encode("utf-8")).hexdigest()[:24]
+    return f"ics-{h}"
+
+
+def _upsert_vevent(db, comp, calendar_id: str, pending: dict):
+    """Upsert one parsed VEVENT component into `calendar_id`. Returns the
+    event's UID, or None when the component is unusable (no DTSTART).
+    `pending` tracks rows added to the session but not yet committed so
+    duplicate UIDs within the same batch are updated, not re-inserted
+    (which would violate the UNIQUE constraint on commit)."""
+    from core.database import CalendarEvent
+
+    uid_val = str(comp.get("uid", "")) or str(uuid.uuid4())
+    dtstart_p = comp.get("dtstart")
+    if not dtstart_p:
+        return None
+    start_dt, all_day = _to_utc_naive(dtstart_p.dt)
+
+    dtend_p = comp.get("dtend")
+    if dtend_p:
+        end_dt, _ = _to_utc_naive(dtend_p.dt)
+    elif all_day:
+        end_dt = start_dt + timedelta(days=1)
+    else:
+        end_dt = start_dt + timedelta(hours=1)
+
+    # is_utc reflects whether the source carried a TZ we converted
+    # from. All-day = no TZ semantics.
+    row_is_utc = (
+        not all_day
+        and isinstance(dtstart_p.dt, datetime)
+        and dtstart_p.dt.tzinfo is not None
+    )
+
+    summary = str(comp.get("summary", ""))
+    description = str(comp.get("description", ""))
+    location = str(comp.get("location", ""))
+    rrule = (
+        comp.get("rrule").to_ical().decode()
+        if comp.get("rrule")
+        else ""
+    )
+
+    existing = pending.get(uid_val) or db.query(CalendarEvent).filter(
+        CalendarEvent.uid == uid_val,
+    ).first()
+    if existing:
+        existing.calendar_id = calendar_id
+        existing.summary = summary
+        existing.description = description
+        existing.location = location
+        existing.dtstart = start_dt
+        existing.dtend = end_dt
+        existing.all_day = all_day
+        existing.is_utc = row_is_utc
+        existing.rrule = rrule
+    else:
+        new_ev = CalendarEvent(
+            uid=uid_val,
+            calendar_id=calendar_id,
+            summary=summary,
+            description=description,
+            location=location,
+            dtstart=start_dt,
+            dtend=end_dt,
+            all_day=all_day,
+            is_utc=row_is_utc,
+            rrule=rrule,
+        )
+        db.add(new_ev)
+        pending[uid_val] = new_ev
+    return uid_val
 
 
 def _sync_blocking(owner: str, url: str, username: str, password: str) -> dict:
@@ -153,68 +230,10 @@ def _sync_blocking(owner: str, url: str, username: str, password: str) -> dict:
                     for comp in ical.walk():
                         if comp.name != "VEVENT":
                             continue
-                        uid_val = str(comp.get("uid", "")) or str(uuid.uuid4())
-                        seen_uids.add(uid_val)
-
-                        dtstart_p = comp.get("dtstart")
-                        if not dtstart_p:
-                            continue
-                        start_dt, all_day = _to_utc_naive(dtstart_p.dt)
-
-                        dtend_p = comp.get("dtend")
-                        if dtend_p:
-                            end_dt, _ = _to_utc_naive(dtend_p.dt)
-                        elif all_day:
-                            end_dt = start_dt + timedelta(days=1)
-                        else:
-                            end_dt = start_dt + timedelta(hours=1)
-
-                        # is_utc reflects whether the source carried a TZ
-                        # we converted from. All-day = no TZ semantics.
-                        row_is_utc = (
-                            not all_day
-                            and isinstance(dtstart_p.dt, datetime)
-                            and dtstart_p.dt.tzinfo is not None
-                        )
-
-                        summary = str(comp.get("summary", ""))
-                        description = str(comp.get("description", ""))
-                        location = str(comp.get("location", ""))
-                        rrule = (
-                            comp.get("rrule").to_ical().decode()
-                            if comp.get("rrule")
-                            else ""
-                        )
-
-                        existing = pending.get(uid_val) or db.query(CalendarEvent).filter(
-                            CalendarEvent.uid == uid_val,
-                        ).first()
-                        if existing:
-                            existing.calendar_id = local_cal.id
-                            existing.summary = summary
-                            existing.description = description
-                            existing.location = location
-                            existing.dtstart = start_dt
-                            existing.dtend = end_dt
-                            existing.all_day = all_day
-                            existing.is_utc = row_is_utc
-                            existing.rrule = rrule
-                        else:
-                            new_ev = CalendarEvent(
-                                uid=uid_val,
-                                calendar_id=local_cal.id,
-                                summary=summary,
-                                description=description,
-                                location=location,
-                                dtstart=start_dt,
-                                dtend=end_dt,
-                                all_day=all_day,
-                                is_utc=row_is_utc,
-                                rrule=rrule,
-                            )
-                            db.add(new_ev)
-                            pending[uid_val] = new_ev
-                        result["events"] += 1
+                        uid_val = _upsert_vevent(db, comp, local_cal.id, pending)
+                        if uid_val:
+                            seen_uids.add(uid_val)
+                            result["events"] += 1
                 db.commit()
 
                 # Prune locally-cached CalDAV events that vanished
@@ -240,23 +259,129 @@ def _sync_blocking(owner: str, url: str, username: str, password: str) -> dict:
     return result
 
 
+def _sync_ics_blocking(owner: str, subs: list) -> dict:
+    """Pull each subscribed .ics feed into its own local calendar.
+    Unlike CalDAV there's no date-range REPORT — the feed IS the whole
+    calendar — so we upsert every VEVENT and prune anything that
+    disappeared from the feed (no window concerns)."""
+    from icalendar import Calendar as iCal
+    from core.database import CalendarCal, CalendarEvent, SessionLocal
+
+    result = {"calendars": 0, "events": 0, "deleted": 0, "errors": []}
+    db = SessionLocal()
+    try:
+        for sub in subs:
+            feed_url = (sub.get("url") or "").strip()
+            if not feed_url:
+                continue
+            label = (sub.get("name") or "").strip()
+            try:
+                import httpx
+                r = httpx.get(feed_url, timeout=20.0, follow_redirects=True)
+                r.raise_for_status()
+                ical = iCal.from_ical(r.text)
+            except Exception as e:
+                result["errors"].append(
+                    f"{label or feed_url}: fetch/parse failed ({e})"[:200])
+                continue
+
+            cal_id = _stable_ics_cal_id(feed_url)
+            # User-given name wins; else the feed's self-declared name.
+            display_name = (
+                label
+                or str(ical.get("X-WR-CALNAME", "")).strip()
+                or "Subscription"
+            )
+            local_cal = db.query(CalendarCal).filter(
+                CalendarCal.id == cal_id,
+                CalendarCal.owner == owner,
+            ).first()
+            if not local_cal:
+                local_cal = CalendarCal(
+                    id=cal_id,
+                    owner=owner,
+                    name=display_name,
+                    color="#5b8abf",
+                    source="ics",
+                )
+                db.add(local_cal)
+                db.commit()
+            elif local_cal.name != display_name:
+                local_cal.name = display_name
+                db.commit()
+            result["calendars"] += 1
+
+            seen_uids = set()
+            pending: dict = {}
+            for comp in ical.walk():
+                if comp.name != "VEVENT":
+                    continue
+                uid_val = _upsert_vevent(db, comp, local_cal.id, pending)
+                if uid_val:
+                    seen_uids.add(uid_val)
+                    result["events"] += 1
+            db.commit()
+
+            # The feed is the complete source of truth — any local event
+            # no longer present in it was deleted upstream.
+            stale_q = db.query(CalendarEvent).filter(
+                CalendarEvent.calendar_id == local_cal.id)
+            if seen_uids:
+                stale_q = stale_q.filter(~CalendarEvent.uid.in_(seen_uids))
+            stale = stale_q.all()
+            for ev in stale:
+                db.delete(ev)
+            result["deleted"] += len(stale)
+            db.commit()
+    except Exception as e:
+        logger.exception("ICS subscription sync failed")
+        result["errors"].append(str(e)[:200])
+        db.rollback()
+    finally:
+        db.close()
+
+    return result
+
+
 async def sync_caldav(owner: str) -> dict:
-    """Pull CalDAV state into local DB for `owner`. Returns counts +
-    errors. Loads credentials from the user's prefs; no-ops with a
-    clear error if CalDAV isn't configured."""
+    """Pull every remote calendar source (the CalDAV account plus any
+    .ics feed subscriptions) into the local DB for `owner`. Returns
+    merged counts + errors. Loads config from the user's prefs; no-ops
+    with a clear error if nothing is configured."""
     from routes.prefs_routes import _load_for_user
 
-    cfg = (_load_for_user(owner) or {}).get("caldav", {}) or {}
+    prefs = _load_for_user(owner) or {}
+    cfg = prefs.get("caldav", {}) or {}
     url = (cfg.get("url") or "").strip()
     user = (cfg.get("username") or "").strip()
     pw = cfg.get("password") or ""
-    if not (url and user and pw):
+    subs = [s for s in (prefs.get("ics_subs") or [])
+            if (s.get("url") or "").strip()]
+
+    caldav_ready = bool(url and user and pw)
+    if not caldav_ready and not subs:
         return {
             "calendars": 0, "events": 0, "deleted": 0,
-            "errors": ["CalDAV is not configured"],
+            "errors": ["No calendar sources configured"],
         }
-    try:
-        return await asyncio.to_thread(_sync_blocking, owner, url, user, pw)
-    except Exception as e:
-        logger.exception("CalDAV sync raised")
-        return {"calendars": 0, "events": 0, "deleted": 0, "errors": [str(e)[:200]]}
+
+    totals = {"calendars": 0, "events": 0, "deleted": 0, "errors": []}
+
+    def _merge(r: dict):
+        for k in ("calendars", "events", "deleted"):
+            totals[k] += r.get(k, 0)
+        totals["errors"].extend(r.get("errors") or [])
+
+    if caldav_ready:
+        try:
+            _merge(await asyncio.to_thread(_sync_blocking, owner, url, user, pw))
+        except Exception as e:
+            logger.exception("CalDAV sync raised")
+            _merge({"errors": [str(e)[:200]]})
+    if subs:
+        try:
+            _merge(await asyncio.to_thread(_sync_ics_blocking, owner, subs))
+        except Exception as e:
+            logger.exception("ICS subscription sync raised")
+            _merge({"errors": [str(e)[:200]]})
+    return totals

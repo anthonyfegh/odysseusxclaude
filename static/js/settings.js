@@ -3027,6 +3027,7 @@ async function initIntegrations() {
 const INTG_TYPES = {
   api:     { label: 'API',     icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>' },
   caldav:  { label: 'CalDAV',  icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>' },
+  ics:     { label: 'ICS Feed', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>' },
   contacts: { label: 'Contacts', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' },
   carddav: { label: 'CardDAV', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' },
   email:   { label: 'Email',   icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>' },
@@ -3051,9 +3052,10 @@ async function initUnifiedIntegrations() {
   }
 
   async function fetchAll() {
-    const [apiRes, calRes, cardRes, contactsRes, emailAccountsRes, mcpRes, vaultRes] = await Promise.all([
+    const [apiRes, calRes, icsRes, cardRes, contactsRes, emailAccountsRes, mcpRes, vaultRes] = await Promise.all([
       fetch('/api/auth/integrations', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : { integrations: [] }).catch(() => ({ integrations: [] })),
       fetch('/api/calendar/config', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
+      fetch('/api/calendar/subscriptions', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : { subscriptions: [] }).catch(() => ({ subscriptions: [] })),
       fetch('/api/contacts/config', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
       fetch('/api/contacts/list', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : { contacts: [], count: 0 }).catch(() => ({ contacts: [], count: 0 })),
       fetch('/api/email/accounts', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : { accounts: [] }).catch(() => ({ accounts: [] })),
@@ -3068,6 +3070,10 @@ async function initUnifiedIntegrations() {
     // CalDAV
     if (calRes.url) {
       items.push({ type: 'caldav', id: '__caldav__', name: 'Calendar (CalDAV)', detail: calRes.url, enabled: true, data: calRes });
+    }
+    // .ics feed subscriptions — one entry per feed
+    for (const sub of (icsRes.subscriptions || [])) {
+      items.push({ type: 'ics', id: sub.id, name: sub.name || 'Calendar subscription', detail: sub.url, enabled: true, data: sub });
     }
     // Contacts import first, then the optional CardDAV sync account.
     const contactCount = Number(contactsRes.count || (contactsRes.contacts || []).length || 0);
@@ -3166,6 +3172,7 @@ async function initUnifiedIntegrations() {
         try {
           if (type === 'api') await fetch(`/api/auth/integrations/${id}`, { method: 'DELETE', credentials: 'same-origin' });
           else if (type === 'caldav') await fetch('/api/calendar/config', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: '', username: '', password: '' }) });
+          else if (type === 'ics') await fetch(`/api/calendar/subscriptions/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'same-origin' });
           else if (type === 'contacts') {
             await fetch('/api/contacts/clear', { method: 'DELETE', credentials: 'same-origin' });
           }
@@ -3187,6 +3194,7 @@ async function initUnifiedIntegrations() {
     formEl.style.display = '';
     if (type === 'api') showApiForm(editId);
     else if (type === 'caldav') showCalDavForm();
+    else if (type === 'ics') showIcsForm(editId);
     else if (type === 'contacts' || type === 'carddav') showCardDavForm();
     else if (type === 'email') showEmailForm(editId);
     else if (type === 'mcp') showMcpForm(editId);
@@ -3382,6 +3390,63 @@ async function initUnifiedIntegrations() {
       el('uf-caldav-msg').style.color = '';
       const d = await _runCalDavTest();
       _setCalDavMsg(d.ok ? 'Connected' : (d.error || 'Failed'), d.ok);
+    });
+  }
+
+  // ── ICS subscription form ──
+  async function showIcsForm(editId) {
+    let existing = null;
+    if (editId && editId !== 'new') {
+      try {
+        const r = await fetch('/api/calendar/subscriptions', { credentials: 'same-origin' });
+        const d = await r.json();
+        existing = (d.subscriptions || []).find(s => s.id === editId) || null;
+      } catch (_) {}
+    }
+    formEl.innerHTML = `
+      <div class="admin-card" style="margin-top:8px">
+        <h2 style="font-size:13px">Calendar Subscription (.ics)</h2>
+        <div class="settings-col">
+          <div class="settings-row"><label class="settings-label">Feed URL</label><input id="uf-ics-url" class="settings-input" placeholder="https://… or webcal://…"></div>
+          <div class="settings-row"><label class="settings-label">Name</label><input id="uf-ics-name" class="settings-input" placeholder="Optional — uses the feed's own name"></div>
+          <div class="settings-row" style="margin-top:4px"><button class="admin-btn-sm" id="uf-ics-save">Save</button><button class="admin-btn-sm" id="uf-ics-cancel" style="opacity:0.7">Cancel</button><span id="uf-ics-msg" style="font-size:11px"></span></div>
+          <div style="font-size:10px;opacity:0.45;margin-top:2px">Read-only feed (university schedule, Google Calendar secret address, …). Pulled on calendar open and on Sync now.</div>
+        </div>
+      </div>`;
+    if (existing) {
+      el('uf-ics-url').value = existing.url || '';
+      el('uf-ics-name').value = existing.name || '';
+    }
+    el('uf-ics-cancel').addEventListener('click', () => { formEl.style.display = 'none'; });
+    el('uf-ics-save').addEventListener('click', async () => {
+      const msg = el('uf-ics-msg');
+      // Save = validate: the server fetches + parses the feed before
+      // persisting, so a typo'd URL never gets saved.
+      msg.textContent = 'Checking feed…'; msg.style.color = '';
+      try {
+        const r = await fetch('/api/calendar/subscriptions', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: el('uf-ics-url').value.trim(),
+            name: el('uf-ics-name').value.trim(),
+            replace_id: existing ? existing.id : '',
+          }),
+        });
+        const d = await r.json();
+        if (!d.ok) {
+          msg.textContent = d.error || 'Failed'; msg.style.color = 'var(--red)';
+          return;
+        }
+        // Pull the feed into the local calendar right away so events
+        // show up without waiting for the next calendar-open sync.
+        fetch('/api/calendar/sync', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+        formEl.style.display = 'none';
+        await renderList();
+        notifyIntegrationsChanged();
+      } catch (e) {
+        msg.textContent = 'Error: ' + e.message; msg.style.color = 'var(--red)';
+      }
     });
   }
 
@@ -4247,6 +4312,7 @@ async function initUnifiedIntegrations() {
                 <option value="">Select...</option>
                 <option value="api">API Service</option>
                 <option value="caldav">CalDAV Calendar</option>
+                <option value="ics">Calendar Subscription (.ics)</option>
                 <option value="contacts">Contacts Import</option>
                 <option value="carddav">Contacts (CardDAV)</option>
                 <option value="email">Email (IMAP/SMTP)</option>

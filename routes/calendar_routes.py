@@ -603,12 +603,127 @@ def setup_calendar_routes() -> APIRouter:
 
     @router.post("/sync")
     async def sync_caldav_endpoint(request: Request):
-        """Pull events from the configured CalDAV server into local DB.
-        Returns counts + any per-calendar errors. Called by the frontend
-        on calendar open and by the periodic scheduler loop."""
+        """Pull events from every configured remote source (CalDAV
+        account + .ics feed subscriptions) into local DB. Returns counts
+        + any per-calendar errors. Called by the frontend on calendar
+        open and by the periodic scheduler loop."""
         owner = _require_user(request)
         from src.caldav_sync import sync_caldav
         return await sync_caldav(owner)
+
+    # ── .ics feed subscriptions ──
+    # Read-only calendar feeds (university schedules, Google "secret
+    # address" links, webcal:// URLs). Stored per-user in
+    # prefs["ics_subs"]; pulled by the same /sync endpoint as CalDAV.
+
+    def _subs_for(owner: str) -> list:
+        from routes.prefs_routes import _load_for_user
+        return [s for s in ((_load_for_user(owner) or {}).get("ics_subs") or [])
+                if (s.get("url") or "").strip()]
+
+    def _delete_synced_calendar(owner: str, cal_id: str) -> None:
+        """Remove a synced calendar row and its events. Used when a
+        subscription is deleted — unlike CalDAV removal, a dropped feed
+        URL can't be 'resynced to restore', so keeping the orphan
+        calendar around is just junk."""
+        db = SessionLocal()
+        try:
+            cal = db.query(CalendarCal).filter(
+                CalendarCal.id == cal_id,
+                CalendarCal.owner == owner,
+            ).first()
+            if cal:
+                db.delete(cal)  # events cascade via the relationship
+                db.commit()
+        except Exception:
+            logger.exception("Failed to remove synced calendar %s", cal_id)
+            db.rollback()
+        finally:
+            db.close()
+
+    @router.get("/subscriptions")
+    async def list_subscriptions(request: Request):
+        owner = _require_user(request)
+        from src.caldav_sync import _stable_ics_cal_id
+        return {"subscriptions": [
+            {
+                "id": _stable_ics_cal_id(s["url"].strip()),
+                "url": s["url"].strip(),
+                "name": s.get("name") or "",
+            }
+            for s in _subs_for(owner)
+        ]}
+
+    @router.post("/subscriptions")
+    async def add_subscription(request: Request):
+        """Add or update an .ics feed subscription. Validates by actually
+        fetching the URL and parsing it as a VCALENDAR before saving —
+        same test-before-save philosophy as the CalDAV form."""
+        owner = _require_user(request)
+        from routes.prefs_routes import _load_for_user, _save_for_user
+        from src.caldav_sync import _stable_ics_cal_id
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        url = (body.get("url") or "").strip()
+        if url.lower().startswith("webcal://"):
+            url = "https://" + url[len("webcal://"):]
+        name = (body.get("name") or "").strip()
+        replace_id = (body.get("replace_id") or "").strip()
+        if not url.lower().startswith(("http://", "https://")):
+            return {"ok": False, "error": "URL must be http(s):// or webcal://"}
+
+        # Validate: fetch + parse. Also harvests the feed's own display
+        # name so the saved card has something readable on it.
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as cx:
+                r = await cx.get(url)
+            if r.status_code != 200:
+                return {"ok": False, "error": f"HTTP {r.status_code}"}
+            from icalendar import Calendar as iCal
+            ical = iCal.from_ical(r.text)
+        except httpx.TimeoutException:
+            return {"ok": False, "error": "Connection timed out"}
+        except Exception as e:
+            return {"ok": False, "error": f"Not a valid iCalendar feed: {e}"[:200]}
+        feed_name = str(ical.get("X-WR-CALNAME", "")).strip()
+        event_count = sum(1 for c in ical.walk() if c.name == "VEVENT")
+
+        sub_id = _stable_ics_cal_id(url)
+        prefs = _load_for_user(owner) or {}
+        subs = [s for s in (prefs.get("ics_subs") or [])
+                if (s.get("url") or "").strip()]
+        # Drop any prior entry for this URL, and — when editing changed
+        # the URL — the entry (and synced calendar) it replaces.
+        drop_ids = {sub_id} | ({replace_id} if replace_id else set())
+        kept = [s for s in subs
+                if _stable_ics_cal_id(s["url"].strip()) not in drop_ids]
+        kept.append({"url": url, "name": name})
+        prefs["ics_subs"] = kept
+        _save_for_user(owner, prefs)
+        if replace_id and replace_id != sub_id:
+            _delete_synced_calendar(owner, replace_id)
+        return {"ok": True, "id": sub_id, "name": name or feed_name,
+                "events": event_count}
+
+    @router.delete("/subscriptions/{sub_id}")
+    async def delete_subscription(request: Request, sub_id: str):
+        owner = _require_user(request)
+        from routes.prefs_routes import _load_for_user, _save_for_user
+        from src.caldav_sync import _stable_ics_cal_id
+        prefs = _load_for_user(owner) or {}
+        subs = [s for s in (prefs.get("ics_subs") or [])
+                if (s.get("url") or "").strip()]
+        kept = [s for s in subs
+                if _stable_ics_cal_id(s["url"].strip()) != sub_id]
+        if len(kept) == len(subs):
+            raise HTTPException(404, "Subscription not found")
+        prefs["ics_subs"] = kept
+        _save_for_user(owner, prefs)
+        _delete_synced_calendar(owner, sub_id)
+        return {"ok": True}
 
     @router.get("/calendars")
     async def list_calendars(request: Request):
