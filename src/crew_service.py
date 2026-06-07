@@ -57,7 +57,7 @@ def crew_to_dict(c: CrewMember) -> Dict[str, Any]:
         "sort_order": c.sort_order or 0,
         "is_active": bool(c.is_active),
         "allow_autonomous_email": any(t in EMAIL_TOOLS for t in tools),
-        "engine": getattr(c, "engine", None) or "legacy",
+        "engine": getattr(c, "engine", None) or "claude_code",
         "claude_session_id": getattr(c, "claude_session_id", None),
     }
 
@@ -73,6 +73,51 @@ def get_or_create_agent_session(db, crew: CrewMember, session_manager=None) -> s
             DbSession.id == crew.session_id, DbSession.archived == False).first()
         if s:
             return s.id
+    sid = uuid.uuid4().hex
+    s = DbSession(
+        id=sid, name=crew.name, endpoint_url=(crew.endpoint_url or ""),
+        model=(crew.model or ""), owner=crew.owner, crew_member_id=crew.id,
+        archived=False, created_at=datetime.utcnow(), updated_at=datetime.utcnow())
+    db.add(s)
+    crew.session_id = sid
+    db.commit()
+    if session_manager is not None:
+        try:
+            session_manager.sessions[sid] = session_manager._db_to_session_meta(s)
+        except Exception:
+            pass
+    return sid
+
+
+def resolve_agent_session_id(db, crew: CrewMember, session_manager=None) -> str:
+    """Resolve (or create) the agent's single ONGOING Odysseus chat session id —
+    the reliable, query-based resolver shared by the chat path (A1) and scheduled
+    tasks, so both land in the agent's one chat. Prefers a still-valid pinned
+    CrewMember.session_id, else the most-recent non-archived session bound by
+    crew_member_id, else creates one bound to the agent.
+
+    Distinct from get_or_create_agent_session (which only checks crew.session_id —
+    an unreliable pin in request context); this adds the bound-fallback A1 needed.
+    """
+    from datetime import datetime
+    # 1) pinned session, if still valid + open
+    pinned = getattr(crew, "session_id", None)
+    if pinned:
+        s = db.query(DbSession).filter(
+            DbSession.id == pinned, DbSession.archived == False).first()  # noqa: E712
+        if s:
+            return s.id
+    # 2) most-recent non-archived session bound to this agent (the durable link)
+    s = (db.query(DbSession)
+         .filter(DbSession.crew_member_id == crew.id, DbSession.archived == False)  # noqa: E712
+         .order_by(DbSession.updated_at.desc())
+         .first())
+    if s:
+        if crew.session_id != s.id:
+            crew.session_id = s.id
+            db.commit()
+        return s.id
+    # 3) none yet — create one bound to the agent (becomes its ongoing chat)
     sid = uuid.uuid4().hex
     s = DbSession(
         id=sid, name=crew.name, endpoint_url=(crew.endpoint_url or ""),
@@ -143,6 +188,23 @@ def default_assistant_id(db, owner: Optional[str]) -> Optional[str]:
                     CrewMember.is_default_assistant == True)  # noqa: E712
             .first())
     return crew.id if crew else None
+
+
+def agent_uses_claude_code(crew) -> bool:
+    """THE single routing rule: an agent-bound LLM turn (chat / LLM task /
+    check-in) runs on the claude_code engine; anything without a crew runs on
+    the claude -p sidecar. All agents default to claude_code; `engine='legacy'`
+    is a per-agent override; `claude_code_engine_enabled` is the global
+    kill-switch (off → every agent falls back to the legacy sidecar path)."""
+    if crew is None:
+        return False
+    if getattr(crew, "engine", "claude_code") == "legacy":
+        return False
+    try:
+        from src.settings import get_setting
+        return bool(get_setting("claude_code_engine_enabled", True))
+    except Exception:
+        return True
 
 
 def list_agents(db, owner: str) -> List[CrewMember]:

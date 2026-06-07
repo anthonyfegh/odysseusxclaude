@@ -145,25 +145,30 @@ def setup_crew_routes() -> APIRouter:
 
     @router.post("/{agent_id}/reset_session")
     async def reset_agent_session(agent_id: str, request: Request):
-        """Start a fresh Claude Code session for this agent: archive the current
-        ongoing chat (kept searchable) and mint a new session, so the agent's
-        working memory resets while the past chat is preserved."""
+        """Start a fresh chat for this agent: archive ALL of its current ongoing
+        chats (kept searchable) and clear its session pins, so the agent's working
+        memory resets while the past chats are preserved. The fresh session is
+        created lazily on the next message (avoids leaving an empty, sweep-prone
+        session behind), so one-chat-per-agent resolves to a clean new chat."""
         owner = _owner(request)
         db = SessionLocal()
         try:
             crew = cs.find_agent(db, agent_id, owner)
             if not crew:
                 raise HTTPException(status_code=404, detail="Agent not found")
-            old_session = crew.session_id
-            if old_session:
-                row = db.query(DbSession).filter(DbSession.id == old_session).first()
-                if row:
-                    row.archived = True
+            # The ongoing chat is linked by crew_member_id, not only by the
+            # CrewMember.session_id pin — archive every non-archived bound session.
+            rows = db.query(DbSession).filter(
+                DbSession.crew_member_id == agent_id,
+                DbSession.archived == False,  # noqa: E712
+            ).all()
+            archived_ids = [r.id for r in rows]
+            for r in rows:
+                r.archived = True
             crew.session_id = None
             crew.claude_session_id = None  # mints a new claude session on next message
             db.commit()
-            new_sid = cs.get_or_create_agent_session(db, crew, None)
-            return {"ok": True, "archived_session": old_session, "new_session": new_sid}
+            return {"ok": True, "archived_sessions": archived_ids, "new_session": None}
         finally:
             db.close()
 
@@ -213,6 +218,7 @@ def setup_crew_routes() -> APIRouter:
                 color=getattr(src, "color", None),
                 category=getattr(src, "category", None),
                 timezone=src.timezone,
+                engine=getattr(src, "engine", "claude_code"),  # copy the source's engine pin (don't silently re-default)
                 session_id=None,
                 is_default_assistant=False,
                 is_active=True,

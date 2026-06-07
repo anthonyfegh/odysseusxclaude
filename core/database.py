@@ -489,10 +489,12 @@ class CrewMember(TimestampMixin, Base):
     color         = Column(String, nullable=True)           # avatar accent color (hex/name) for the roster
     category      = Column(String, nullable=True)           # grouping/template category, e.g. "assistant"|"research"
     status        = Column(String, nullable=True)           # NULL/"active" = real agent; "draft" = in-progress builder draft
-    # Reasoning engine for this agent's chats. "legacy" = the claude -p sidecar +
-    # Odysseus's own tool loop. "claude_code" = a persistent full-capability Claude
-    # Code session (its native tools + Odysseus tools via MCP). Phased rollout.
-    engine            = Column(String, default="legacy")
+    # Reasoning engine for this agent's chats/tasks. "claude_code" (DEFAULT) = a
+    # persistent full-capability Claude Code session (native tools + Odysseus
+    # tools via MCP). "legacy" = the claude -p sidecar + Odysseus's own tool loop
+    # (a per-agent override). Architecture is a permanent hybrid: agent ⇒
+    # claude_code, everything else ⇒ sidecar.
+    engine            = Column(String, default="claude_code")
     # Stable `claude --session-id` UUID for the agent's persistent Claude Code
     # session (minted lazily on the first claude_code turn).
     claude_session_id = Column(String, nullable=True)
@@ -1389,6 +1391,36 @@ def _migrate_add_engine_columns():
         logging.getLogger(__name__).warning(f"engine columns migration: {e}")
 
 
+def _migrate_default_engine_claude_code():
+    """One-shot backfill flipping every existing agent from the old "legacy"
+    default to "claude_code" (the new uniform default — agent work runs on the
+    claude_code engine; everything else on the claude -p sidecar).
+
+    GATED by a settings sentinel `_agents_defaulted_to_claude_code` so it runs
+    exactly once: a later *manual* per-agent `engine='legacy'` pin must survive
+    reboots and not get re-flipped. Reversible (re-pin per agent, or flip the
+    `claude_code_engine_enabled` kill-switch)."""
+    try:
+        from src.settings import load_settings, save_settings
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"engine default backfill (settings import): {e}")
+        return
+    try:
+        s = load_settings()
+        if s.get("_agents_defaulted_to_claude_code"):
+            return  # already backfilled — respect manual legacy pins
+        with engine.connect() as conn:
+            res = conn.execute(text(
+                "UPDATE crew_members SET engine='claude_code' "
+                "WHERE engine IS NULL OR engine='legacy'"))
+            conn.commit()
+            n = getattr(res, "rowcount", -1)
+        s["_agents_defaulted_to_claude_code"] = True
+        save_settings(s)
+        logging.getLogger(__name__).info(
+            f"Defaulted {n} agent(s) to claude_code engine (one-shot backfill)")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"engine default backfill: {e}")
 
 
 class Note(TimestampMixin, Base):
@@ -1579,6 +1611,7 @@ def init_db():
     _migrate_add_assistant_columns()
     _migrate_add_agent_columns()
     _migrate_add_engine_columns()
+    _migrate_default_engine_claude_code()
     _migrate_add_learned_guidance()
     _migrate_assign_default_agent_to_tasks()
     _migrate_seed_email_account()

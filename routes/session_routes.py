@@ -204,6 +204,43 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                     model = _m or ""
             skip_val = True
 
+            # One chat per agent: a claude_code agent reuses its single ongoing
+            # session instead of minting a new chat each open. The durable link is
+            # the session row's crew_member_id (set in the binding block below), so
+            # we reuse the agent's most-recent non-archived bound session — preferring
+            # the pinned CrewMember.session_id when it's still valid. Only fall
+            # through to create one when the agent has none yet. Legacy agents keep
+            # new-chat-each-time.
+            if _cs.agent_uses_claude_code(_bind_crew):
+                _dbs = SessionLocal()
+                _reuse = None
+                try:
+                    _existing = None
+                    _pinned = getattr(_bind_crew, "session_id", None)
+                    if _pinned:
+                        _existing = _dbs.query(DbSession).filter(
+                            DbSession.id == _pinned, DbSession.archived == False).first()
+                    if not _existing:
+                        _existing = (_dbs.query(DbSession)
+                                     .filter(DbSession.crew_member_id == _bind_crew.id,
+                                             DbSession.archived == False)
+                                     .order_by(DbSession.updated_at.desc())
+                                     .first())
+                    if _existing:
+                        _reuse = SessionResponse(
+                            id=_existing.id,
+                            name=(_existing.name or (_bind_crew.name or "")),
+                            model=(_existing.model or model or ""),
+                            rag=False,
+                            archived=False,
+                        )
+                finally:
+                    _dbs.close()
+                if _reuse:
+                    return _reuse
+                # else: agent has no ongoing session yet — fall through to the normal
+                # creation path; the binding block pins it as the agent's one chat.
+
         if not endpoint_url and not skip_val:
             raise HTTPException(400, "endpoint_url is required (choose from /api/models)")
 
@@ -286,7 +323,14 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                 _row = _dbc.query(DbSession).filter(DbSession.id == sid).first()
                 if _row:
                     _row.crew_member_id = _bind_crew.id
-                    _dbc.commit()
+                # Pin this newly-created session as the claude_code agent's single
+                # ongoing chat (so reset/tasks resolve to the same one).
+                if _cs.agent_uses_claude_code(_bind_crew):
+                    from core.database import CrewMember as _CM
+                    _cm = _dbc.query(_CM).filter(_CM.id == _bind_crew.id).first()
+                    if _cm:
+                        _cm.session_id = sid
+                _dbc.commit()
             finally:
                 _dbc.close()
         # Fire event for automation tasks

@@ -536,43 +536,31 @@ export function renderAgentDashboard(agent) {
   show('persona');
 }
 
-// Engine selector + (for Claude Code agents) the "open this session in a real
-// terminal" command and a "Reset session" control. Lives at the bottom of the
-// per-agent dashboard.
+// The "open this session in a real terminal" command + a "Reset session"
+// control for the agent's Claude Code session. Lives at the bottom of the
+// per-agent dashboard. Agents run uniformly on the Claude Code engine — there
+// is no user-facing engine picker (a backend `engine='legacy'` override just
+// shows a hint here).
 function _renderEngineFooter(body, agent) {
   const foot = body.querySelector('#dash-engine-footer');
   if (!foot) return;
-  const eng = agent.engine || 'legacy';
-  const isCC = eng === 'claude_code';
+  const isCC = (agent.engine || 'claude_code') !== 'legacy';
   const sid = agent.claude_session_id;
   const cmd = sid ? `cd data/agents/${agent.id} && claude --resume ${sid}` : '';
-  const term = !isCC ? '' : (sid
+  if (!isCC) {
+    foot.innerHTML = `<div class="dash-term dash-term-label">This agent runs on the legacy sidecar (backend engine override).</div>`;
+    return;
+  }
+  const term = sid
     ? `<div class="dash-term"><span class="dash-term-label">Open this agent's live session in your terminal (from your odysseus folder):</span>
          <code class="dash-term-cmd">${esc(cmd)}</code>
          <button class="agent-act" id="dash-term-copy">Copy</button></div>`
-    : `<div class="dash-term dash-term-label">A terminal command (claude --resume …) appears here after this agent's first message.</div>`);
+    : `<div class="dash-term dash-term-label">A terminal command (claude --resume …) appears here after this agent's first message.</div>`;
   foot.innerHTML = `
     <div class="dash-engine-row">
-      <span class="dash-term-label">Engine</span>
-      <select id="dash-engine-sel" class="settings-input" style="width:auto;">
-        <option value="legacy"${!isCC ? ' selected' : ''}>Legacy (claude -p)</option>
-        <option value="claude_code"${isCC ? ' selected' : ''}>Claude Code session (full capability)</option>
-      </select>
-      ${isCC ? '<button class="agent-act" id="dash-reset-session" title="Archive the current chat (kept searchable) and start a fresh session">Reset session</button>' : ''}
+      <button class="agent-act" id="dash-reset-session" title="Archive the current chat (kept searchable) and start a fresh session">Reset session</button>
     </div>
     ${term}`;
-  foot.querySelector('#dash-engine-sel')?.addEventListener('change', async (e) => {
-    const v = e.target.value;
-    try {
-      await fetch(`${API}/api/agents/${agent.id}`, {
-        method: 'PATCH', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ engine: v }),
-      });
-      agent.engine = v; _agentCache = null;
-      _renderEngineFooter(body, agent);
-      uiModule.showToast(v === 'claude_code' ? 'Switched to Claude Code session' : 'Switched to legacy engine');
-    } catch (err) { uiModule.showError('Could not switch engine: ' + err.message); }
-  });
   foot.querySelector('#dash-term-copy')?.addEventListener('click', () => {
     try { uiModule.copyToClipboard(cmd); uiModule.showToast('Command copied'); } catch (_) {}
   });
@@ -859,6 +847,14 @@ export async function openAgentPicker(sessionId) {
       const id = row.dataset.id; // "" = default assistant
       try {
         if (isNew) {
+          // A claude_code agent has ONE ongoing chat — open it directly (with its
+          // history) instead of starting an empty pending chat that would hide the
+          // existing conversation until reload.
+          const picked = id ? agents.find(a => a.id === id) : null;
+          if (picked && (picked.engine || 'claude_code') !== 'legacy') {
+            await chatWithAgent(picked);
+            return;
+          }
           // No session yet — record the pick; it's applied when the first
           // message materializes the session.
           await window.sessionModule?.bindPendingAgent?.(id || null);

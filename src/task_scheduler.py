@@ -528,7 +528,7 @@ class TaskScheduler:
         finally:
             db.close()
 
-    async def _execute_task(self, task_id: str, *, bypass_model_slot: bool = False, release_executing: bool = True):
+    async def _execute_task(self, task_id: str, *, bypass_model_slot: bool = False, release_executing: bool = True, manual: bool = False):
         # Create the run record with status="queued" BEFORE waiting on the
         # semaphore so the UI can show that a manually-triggered task is in
         # line behind another. Once we acquire the slot, flip to "running"
@@ -555,21 +555,22 @@ class TaskScheduler:
             _q_db.close()
 
         if bypass_model_slot or not self._task_needs_model_slot(task_id):
-            await self._execute_task_locked(task_id, run_id, release_executing=release_executing)
+            await self._execute_task_locked(task_id, run_id, release_executing=release_executing, manual=manual)
             return
 
         async with self._run_semaphore:
-            await self._execute_task_locked(task_id, run_id, release_executing=release_executing)
+            await self._execute_task_locked(task_id, run_id, release_executing=release_executing, manual=manual)
 
-    async def _execute_task_locked(self, task_id: str, run_id: str, *, release_executing: bool = True):
+    async def _execute_task_locked(self, task_id: str, run_id: str, *, release_executing: bool = True, manual: bool = False):
         from core.database import SessionLocal, ScheduledTask, TaskRun
 
         db = SessionLocal()
         try:
             task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
-            if not task or task.status != "active":
-                # Task was paused/deleted while queued — record that outcome
-                # so the run row doesn't sit as "queued" forever.
+            # Skip only on auto/scheduled runs of a paused/deleted task. A manual
+            # "Run now" overrides pause (a deleted task is still skipped).
+            if not task or (not manual and task.status != "active"):
+                # Record the outcome so the run row doesn't sit as "queued" forever.
                 stale = db.query(TaskRun).filter(TaskRun.id == run_id).first()
                 if stale and stale.status == "queued":
                     stale.status = "skipped"
@@ -610,6 +611,9 @@ class TaskScheduler:
             self._last_run_model = None
             self._last_run_steps = None
             self._last_run_tool_results = None
+            # True only when a claude_code task already persisted its Q&A into the
+            # agent's chat (so _deliver_task_result skips its raw session insert).
+            self._last_run_cc_persisted = False
             try:
                 if task_type == "action":
                     result, success = await self._execute_action(task, run_id=run_id)
@@ -1032,9 +1036,13 @@ class TaskScheduler:
             return "No unread emails"
         return "\n".join(lines[:10])
 
-    async def _execute_checkin(self, task, crew, db, session_id: str,
-                               endpoint_url: str, model: str) -> str:
-        """Gather raw data from all integrations, hand it to the LLM to write the check-in."""
+    async def _execute_checkin(self, task, crew, db, session_id, endpoint_url, model,
+                               run_id: str | None = None) -> str:
+        """Gather raw data from all integrations, hand it to the LLM to write the
+        check-in. The gathering is deterministic (code, not the model's tools) on
+        BOTH engines; only the generation differs — a claude_code agent generates
+        in its persistent session (session_id/endpoint_url/model are unused there),
+        a legacy agent through the sidecar agent loop."""
         from src.tool_implementations import do_manage_notes
         from src.agent_tools import get_mcp_manager
 
@@ -1212,6 +1220,13 @@ class TaskScheduler:
             "Use tools to take action if needed. Keep it concise — no raw data dumps."
         )
 
+        # claude_code agent: generate the briefing inside its persistent session
+        # (shared --resume memory; lands in the agent's one ongoing chat).
+        from src.crew_service import agent_uses_claude_code
+        if agent_uses_claude_code(crew):
+            return await self._run_claude_code_task(crew, task, db, run_id, override_message=context)
+
+        # legacy agent: the sidecar agent loop.
         return await self._run_agent_loop(
             endpoint_url, model, task, session_id,
             system_prompt=(crew.personality or "").strip() if crew else None,
@@ -1231,6 +1246,25 @@ class TaskScheduler:
                 crew = db.query(CrewMember).filter(CrewMember.id == task.crew_member_id).first()
             except Exception:
                 crew = None
+
+        # A default-assistant check-in (detected by name) keeps its deterministic
+        # data-gathering regardless of engine — resolved early so the cc branch
+        # below can route it through _execute_checkin rather than straight prompt.
+        is_checkin = bool(crew and crew.is_default_assistant
+                          and "check-in" in (task.name or "").lower())
+
+        # A claude_code agent runs the task INSIDE its persistent Claude session
+        # (shared working memory via --resume); the Q&A lands in the agent's one
+        # ongoing chat + Activity. A check-in still pre-gathers calendar/notes/
+        # email deterministically (_execute_checkin), then generates IN-session;
+        # any other LLM task goes straight to the engine. This early-returns past
+        # the legacy agent loop, strip_think, and the task-teacher escalation.
+        # Legacy/action/research tasks are unchanged. Gated by the master kill-switch.
+        from src.crew_service import agent_uses_claude_code
+        if agent_uses_claude_code(crew):
+            if is_checkin:
+                return await self._execute_checkin(task, crew, db, None, None, None, run_id=run_id)
+            return await self._run_claude_code_task(crew, task, db, run_id)
 
         # Determine endpoint + model
         endpoint_url = task.endpoint_url
@@ -1281,11 +1315,10 @@ class TaskScheduler:
             except Exception:
                 pass
 
-        # For assistant check-ins: call each tool directly and post results
-        # as separate messages. More reliable than hoping the model calls tools.
-        is_checkin = crew and crew.is_default_assistant and "check-in" in (task.name or "").lower()
+        # For assistant check-ins: gather raw data deterministically, then let the
+        # model write the briefing (legacy sidecar path; the cc path returned above).
         if is_checkin:
-            return await self._execute_checkin(task, crew, db, session_id, endpoint_url, model)
+            return await self._execute_checkin(task, crew, db, session_id, endpoint_url, model, run_id=run_id)
 
         # Build system prompt: crew member persona overrides the default.
         system_prompt = (
@@ -1496,6 +1529,13 @@ class TaskScheduler:
             return
 
         if output != "session":
+            return
+
+        # A claude_code task already persisted its Q&A into the agent's live chat
+        # (via add_message + save_assistant_response, which keep message_count
+        # correct). Skip the raw db.add below — it never updates message_count, so
+        # going through it would leave duplicate rows + a stale count.
+        if getattr(self, "_last_run_cc_persisted", False):
             return
 
         endpoint_url = task.endpoint_url
@@ -1810,6 +1850,155 @@ class TaskScheduler:
 
         return full_text or "(no output)"
 
+    async def _run_claude_code_task(self, crew, task, db, run_id: str | None = None,
+                                    override_message: str | None = None) -> str:
+        """Run an LLM task INSIDE a claude_code agent's persistent Claude session.
+        The Q&A lands in the agent's one ongoing chat (+ Activity), reusing the
+        chat path's persistence (sess.add_message + save_assistant_response, which
+        keep DbSession.message_count correct). Mirrors _run_agent_loop's step
+        capture but drives stream_claude_code_session — so the task shares the
+        agent's --resume working memory and renders identically in Activity.
+
+        `override_message` lets a caller (the check-in path) feed a pre-built
+        message — e.g. deterministically-gathered calendar/notes/email data —
+        instead of the raw task.prompt; the agent then generates in-session."""
+        from src.claude_code_engine import stream_claude_code_session
+        from src.crew_service import resolve_agent_session_id
+        from routes.chat_helpers import save_assistant_response
+        from core.models import ChatMessage as MemMsg
+        from src import task_run_live
+
+        _msg = override_message if override_message is not None else (task.prompt or f"[Task] {task.name}")
+
+        # Point the task at the agent's one ongoing chat (Activity/links land
+        # there) and pin it. Supersedes the legacy "[Task] …" session for cc.
+        session_id = resolve_agent_session_id(db, crew, self._session_manager)
+        if getattr(task, "session_id", None) != session_id:
+            task.session_id = session_id
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+        self._last_run_model = crew.model or self._last_run_model
+
+        sess = self._session_manager.get_session(session_id)  # hydrates full history
+        sess.add_message(MemMsg("user", _msg,
+                                metadata={"source": "cron", "task_id": task.id,
+                                          "task_name": task.name}))
+
+        full_text = ""
+        last_metrics = None
+        tool_events: list = []
+        _starts: dict = {}
+        steps: list = []
+        _MAX_STEPS = 2000
+
+        def _cap(s, n):
+            if not isinstance(s, str):
+                try:
+                    s = json.dumps(s)
+                except Exception:
+                    s = str(s)
+            return s if len(s) <= n else s[:n] + "…"
+
+        stop_event = asyncio.Event()
+        if run_id:
+            try:
+                task_run_live.open_run(run_id)
+            except Exception:
+                pass
+        _run_status = "done"
+        try:
+            async for event_str in stream_claude_code_session(
+                crew=crew, chat_session_id=session_id,
+                message=_msg,
+                owner=task.owner, workspace_root=None, stop_event=stop_event,
+            ):
+                if run_id and not event_str.startswith("data: [DONE]"):
+                    task_run_live.publish(run_id, event_str)
+                if not event_str.startswith("data: ") or event_str.startswith("data: [DONE]"):
+                    continue
+                try:
+                    data = json.loads(event_str[6:])
+                except (json.JSONDecodeError, KeyError):
+                    continue
+                _t = data.get("type")
+                # full_text: non-thinking deltas only (mirror chat_routes).
+                if "delta" in data:
+                    if not data.get("thinking"):
+                        full_text += data["delta"]
+                elif _t == "model_info":
+                    self._last_run_model = data.get("model") or self._last_run_model
+                elif _t == "metrics":
+                    last_metrics = data.get("data") or {}
+                    last_metrics.setdefault("model", self._last_run_model)
+                elif _t == "tool_start":
+                    _starts[data.get("tool_use_id")] = {
+                        "round": data.get("round", 1), "tool": data.get("tool"),
+                        "command": data.get("command", "")}
+                elif _t == "tool_output":
+                    _st = _starts.get(data.get("tool_use_id"), {})
+                    tool_events.append({
+                        "round": _st.get("round", data.get("round", 1)),
+                        "tool": _st.get("tool") or data.get("tool"),
+                        "command": _st.get("command", ""),
+                        "output": data.get("output", ""),
+                        "exit_code": data.get("exit_code", 0)})
+                # Structured step timeline (same shapes as _run_agent_loop).
+                if len(steps) < _MAX_STEPS:
+                    if "delta" in data:
+                        _k = "thinking" if data.get("thinking") else "text"
+                        if steps and steps[-1].get("k") == _k:
+                            steps[-1]["text"] = _cap((steps[-1].get("text") or "") + data["delta"], 8000)
+                        else:
+                            steps.append({"k": _k, "text": _cap(data["delta"], 8000)})
+                    elif _t == "tool_start":
+                        steps.append({"k": "tool_start", "tool": data.get("tool"),
+                                      "command": _cap(data.get("command") or "", 2000),
+                                      "round": data.get("round")})
+                    elif _t == "tool_output":
+                        steps.append({"k": "tool_output", "tool": data.get("tool"),
+                                      "output": _cap(data.get("output") or "", 2000),
+                                      "exit_code": data.get("exit_code"),
+                                      "round": data.get("round")})
+                    elif _t == "agent_step":
+                        steps.append({"k": "agent_step", "round": data.get("round")})
+                    elif _t == "metrics":
+                        steps.append({"k": "metrics", "data": data.get("data")})
+        except asyncio.CancelledError:
+            _run_status = "stopped"
+            stop_event.set()
+            raise
+        except Exception:
+            _run_status = "error"
+            raise
+        finally:
+            self._last_run_steps = steps
+            self._last_run_tool_results = [
+                {"tool": s.get("tool"), "output": s.get("output"),
+                 "error": (s.get("exit_code") not in (0, None))}
+                for s in steps if s.get("k") == "tool_output"
+            ]
+            if run_id:
+                try:
+                    task_run_live.close_run(run_id, _run_status)
+                except Exception:
+                    pass
+
+        if last_metrics and last_metrics.get("model"):
+            self._last_run_model = last_metrics.get("model")
+        # Persist the assistant turn into the agent's chat — reuses the chat path
+        # so message_count stays correct (do NOT also go through the raw db.add in
+        # _deliver_task_result; the flag below makes it skip the session branch).
+        try:
+            save_assistant_response(sess, self._session_manager, session_id,
+                                    full_text, last_metrics,
+                                    tool_events=(tool_events or None))
+        except Exception:
+            logger.exception("claude_code task: save_assistant_response failed")
+        self._last_run_cc_persisted = True
+        return full_text or "(no output)"
+
     async def _execute_research_task(self, task, db) -> str:
         """Execute a deep research task using DeepResearcher."""
         from core.database import Session as DbSession, ChatMessage
@@ -2048,15 +2237,17 @@ class TaskScheduler:
             logger.error(f"Task {task.id} MCP delivery failed: {e}")
 
     async def run_task_now(self, task_id: str, *, force: bool = False):
-        """Manually trigger a task execution."""
+        """Manually trigger a task execution. A manual run overrides a paused
+        status (the user explicitly asked to run it now); only scheduled/auto
+        runs respect pause."""
         if force:
-            asyncio.create_task(self._execute_task(task_id, bypass_model_slot=True, release_executing=False))
+            asyncio.create_task(self._execute_task(task_id, bypass_model_slot=True, release_executing=False, manual=True))
             return True
         async with self._executing_lock:
             if task_id in self._executing:
                 return False
             self._executing.add(task_id)
-        asyncio.create_task(self._execute_task(task_id))
+        asyncio.create_task(self._execute_task(task_id, manual=True))
         return True
 
     async def stop_task(self, task_id: str) -> bool:
@@ -2429,6 +2620,7 @@ class TaskScheduler:
                 is_active=True,
                 sort_order=0,
                 is_default_assistant=True,
+                engine="claude_code",  # the default assistant runs on the claude_code engine (agent ⇒ cc)
                 timezone=None,  # user picks in settings; None = legacy UTC behavior
             )
             db.add(assistant)
