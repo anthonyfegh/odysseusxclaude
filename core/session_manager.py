@@ -308,6 +308,17 @@ class SessionManager:
     # Session CRUD
     # ------------------------------------------------------------------
 
+    def _db_message_count(self, session_id: str) -> int:
+        """Stored message-row count for a session (single PK lookup)."""
+        db = SessionLocal()
+        try:
+            row = db.query(DbSession.message_count).filter(DbSession.id == session_id).first()
+            return int(row[0]) if row and row[0] is not None else 0
+        except Exception:
+            return 0
+        finally:
+            db.close()
+
     def get_session(self, session_id: str) -> Session:
         """Get a session by ID, loading from DB if needed.
 
@@ -318,8 +329,14 @@ class SessionManager:
             self._load_session_from_db(session_id)
         else:
             cached = self.sessions[session_id]
-            # Lazy hydrate: metadata-only entries get their messages on first read.
-            if not cached.history and getattr(cached, "message_count", 0) > 0:
+            # Hydrate when in-memory history is INCOMPLETE vs the DB — not only when
+            # it's empty. A reuse/append path (e.g. one-chat-per-agent landing a
+            # message on a metadata-only session) can add a row before hydration,
+            # leaving in-memory history shorter than the stored rows and hiding the
+            # real history until a restart. Comparing to the DB count self-heals it;
+            # an in-flight stream keeps in-memory length >= the saved count, so a
+            # streaming partial is never clobbered.
+            if len(cached.history) < self._db_message_count(session_id):
                 self._load_session_from_db(session_id)
 
         # Keep model/endpoint metadata fresh. Endpoint deletion can clear the

@@ -40,6 +40,22 @@ _HARD_CAP_SECONDS = float(os.environ.get("CLAUDE_SESSION_HARD_CAP", "1800"))
 # stream through intact.
 _STREAM_LIMIT = int(os.environ.get("CLAUDE_SESSION_STREAM_LIMIT", str(64 * 1024 * 1024)))
 
+# One asyncio.Lock per agent so two turns never `claude --resume` the SAME
+# session concurrently (chat-vs-task, or a rapid double-send) — that would
+# corrupt the session and trigger "interrupted"/"No response requested."
+# injection. Keyed by crew.id (1:1 with the agent's claude session); held for
+# the whole turn and released in the engine's finally (so a disconnect/cancel
+# that unwinds the generator frees it). Different agents run concurrently.
+_agent_locks: dict = {}
+
+
+def _get_agent_lock(crew_id: str) -> "asyncio.Lock":
+    lock = _agent_locks.get(crew_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _agent_locks[crew_id] = lock
+    return lock
+
 # Friendly verbs for the tool-thread UI (mirrors the chat renderer's labels).
 _TOOL_LABELS = {
     "bash": "bash", "web_search": "web_search", "web_fetch": "web_fetch",
@@ -228,6 +244,12 @@ async def stream_claude_code_session(
     last_result = None
     tool_names = {}  # tool_use_id -> raw tool name, so tool_output can label correctly
     tool_pending_step = False  # a tool_output happened; the next text needs a fresh bubble
+    # B4: serialize turns per agent — block a concurrent `--resume` of the same
+    # claude session (model_info already streamed above, so the UI shows activity
+    # while this waits). Released in the finally below.
+    _lock = _get_agent_lock(crew_id) if crew_id else None
+    if _lock is not None:
+        await _lock.acquire()
     try:
         proc = await asyncio.create_subprocess_exec(
             *argv, cwd=workspace_root,
@@ -350,6 +372,8 @@ async def stream_claude_code_session(
         logger.exception("claude_code session failed")
         yield _sse({"delta": f"\n\n[Claude Code session error: {e}]"})
     finally:
+        # Kill the subprocess BEFORE releasing the per-agent lock, so the next
+        # turn never `--resume`s a session a dying process still holds.
         try:
             if proc is not None and proc.returncode is None:
                 proc.kill()
@@ -359,4 +383,9 @@ async def stream_claude_code_session(
             os.unlink(mcp_cfg_path)
         except Exception:
             pass
+        if _lock is not None:
+            try:
+                _lock.release()
+            except RuntimeError:
+                pass  # not held (acquire was interrupted)
     yield "data: [DONE]\n\n"
