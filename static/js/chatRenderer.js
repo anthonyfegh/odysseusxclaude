@@ -1979,6 +1979,36 @@ export function addMessage(role, content, modelName, metadata) {
         }
       }
 
+      // Fallback: the metadata had tool_events but no per-round texts — e.g. any
+      // assistant turn persisted via save_assistant_response, which stores
+      // tool_events but doesn't split the reply by round. Without this, the whole
+      // reply text vanishes on reload (only the tool nodes show). Render the full
+      // reply after the tools (the common tools-then-answer shape).
+      if (!lastMsgAi) {
+        const _fbTxt = markdownModule.squashOutsideCode(stripToolBlocks(textRaw || '')).trim();
+        if (_fbTxt) {
+          const wrap = document.createElement('div');
+          wrap.className = 'msg msg-ai' + (lastWrap ? ' msg-continuation' : '');
+          const roleEl = document.createElement('div');
+          roleEl.className = 'role';
+          const _fbModel = modelName || metadata?.model;
+          roleEl.textContent = shortModel(_fbModel);
+          applyModelColor(roleEl, _fbModel);
+          roleEl.appendChild(roleTimestamp(metadata?.timestamp));
+          wrap.appendChild(roleEl);
+          const fbBody = document.createElement('div');
+          fbBody.className = 'body';
+          fbBody.innerHTML = markdownModule.processWithThinking(_fbTxt);
+          wrap.appendChild(fbBody);
+          wrap.dataset.raw = _fbTxt;
+          if (metadata?._db_id) wrap.dataset.dbId = metadata._db_id;
+          box.appendChild(wrap);
+          lastWrap = wrap;
+          if (!firstMsgAi) firstMsgAi = wrap;
+          lastMsgAi = wrap;
+        }
+      }
+
       const firstWrap = lastMsgAi || lastWrap;
       if (firstWrap && firstWrap.classList.contains('msg-ai')) {
         if (metadata?.memories_used?.length) firstWrap._memoriesUsed = metadata.memories_used;

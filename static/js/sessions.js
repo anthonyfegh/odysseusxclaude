@@ -1606,18 +1606,25 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
         'OpenClaw');
     } else if (msgHistory.length) {
       for (const msg of msgHistory) {
-        const meta = msg.metadata ? { ...msg.metadata, _fromHistory: true } : null;
-        let displayContent = typeof msg.content === 'string' ? msg.content : (msg.content ? String(msg.content) : '');
-        // Clean up doc selection context for display
-        if (msg.role === 'user') {
-          // Hide "Continue where you left off" bubbles
-          if (displayContent.trim() === 'Continue where you left off' || displayContent.trim().startsWith('Your message was cut off.') || displayContent.trim().startsWith('Your previous response was interrupted.') || displayContent.includes('[Instruction: Rewrite') || displayContent.includes('[Instruction: Explain')) continue;
-          const docEditMatch = displayContent.match(/^In the document, edit this specific text \((lines? [\d-]+)\):\n```\n([\s\S]*?)\n```\n\nInstruction: ([\s\S]*)$/);
-          if (docEditMatch) {
-            displayContent = `[Doc edit: ${docEditMatch[1]}] ${docEditMatch[3]}`;
+        // Per-message try/catch: one malformed message must never blank out the
+        // rest of the conversation below it (the render loop has no other guard,
+        // so a single throw used to drop every message after it).
+        try {
+          const meta = msg.metadata ? { ...msg.metadata, _fromHistory: true } : null;
+          let displayContent = typeof msg.content === 'string' ? msg.content : (msg.content ? String(msg.content) : '');
+          // Clean up doc selection context for display
+          if (msg.role === 'user') {
+            // Hide "Continue where you left off" bubbles
+            if (displayContent.trim() === 'Continue where you left off' || displayContent.trim().startsWith('Your message was cut off.') || displayContent.trim().startsWith('Your previous response was interrupted.') || displayContent.includes('[Instruction: Rewrite') || displayContent.includes('[Instruction: Explain')) continue;
+            const docEditMatch = displayContent.match(/^In the document, edit this specific text \((lines? [\d-]+)\):\n```\n([\s\S]*?)\n```\n\nInstruction: ([\s\S]*)$/);
+            if (docEditMatch) {
+              displayContent = `[Doc edit: ${docEditMatch[1]}] ${docEditMatch[3]}`;
+            }
           }
+          window.chatModule.addMessage(msg.role, markdownModule.renderContent(displayContent), modelName, meta);
+        } catch (e) {
+          console.warn('Failed to render history message:', e, msg && msg.role);
         }
-        window.chatModule.addMessage(msg.role, markdownModule.renderContent(displayContent), modelName, meta);
       }
     } else {
       if (window.chatModule && window.chatModule.showWelcomeScreen) window.chatModule.showWelcomeScreen();

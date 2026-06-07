@@ -322,24 +322,29 @@ import createResearchSynapse from './researchSynapse.js';
         const stoppedLabel = document.createElement('span');
         stoppedLabel.textContent = '[Message interrupted]';
         stoppedIndicator.appendChild(stoppedLabel);
-        const continueBtn = document.createElement('button');
-        continueBtn.className = 'continue-btn';
-        continueBtn.title = 'Continue';
-        continueBtn.textContent = '\u25B8';
-        const _stoppedHolder = currentHolder; // capture before it gets cleared
-        continueBtn.addEventListener('click', () => {
-          stoppedIndicator.remove();
-          _hideUserBubble = true;
-          _pendingContinue = _stoppedHolder;
-          const cutoff = stoppedContent;
-          const msgInput = uiModule.el('message');
-          if (msgInput) {
-            msgInput.value = 'Your previous response was interrupted. It ended with:\n\n' + cutoff.slice(-500) + '\n\nDo NOT repeat what you already said. Continue exactly from where you were cut off.';
-            const sb = document.querySelector('.send-btn');
-            if (sb) sb.click();
-          }
-        });
-        stoppedIndicator.appendChild(continueBtn);
+        // claude_code is a durable session \u2014 don't offer "Continue" (poking a
+        // finished session with a continuation is the poison vector). The user
+        // just sends their next message and the session resumes.
+        if (currentHolder._streamEngine !== 'claude_code') {
+          const continueBtn = document.createElement('button');
+          continueBtn.className = 'continue-btn';
+          continueBtn.title = 'Continue';
+          continueBtn.textContent = '\u25B8';
+          const _stoppedHolder = currentHolder; // capture before it gets cleared
+          continueBtn.addEventListener('click', () => {
+            stoppedIndicator.remove();
+            _hideUserBubble = true;
+            _pendingContinue = _stoppedHolder;
+            const cutoff = stoppedContent;
+            const msgInput = uiModule.el('message');
+            if (msgInput) {
+              msgInput.value = 'Your previous response was interrupted. It ended with:\n\n' + cutoff.slice(-500) + '\n\nDo NOT repeat what you already said. Continue exactly from where you were cut off.';
+              const sb = document.querySelector('.send-btn');
+              if (sb) sb.click();
+            }
+          });
+          stoppedIndicator.appendChild(continueBtn);
+        }
         currentHolder.querySelector('.body').appendChild(stoppedIndicator);
 
         // Tell server to mark this message as stopped
@@ -1743,6 +1748,11 @@ import createResearchSynapse from './researchSynapse.js';
                 }
                 continue;
               } else if (json.type === 'model_info') {
+                // Remember the engine driving this turn so we can suppress the
+                // legacy continue/stall-recovery affordances for claude_code (a
+                // durable session that must not be poked with "Continue …" — that
+                // is the path that elicits "No response requested." poisoning).
+                if (holder) holder._streamEngine = json.engine || 'legacy';
                 // Update role label with model name as soon as we know it
                 if (!_isBg && holder) {
                   const roleEl = holder.querySelector('.role');
@@ -2278,7 +2288,10 @@ import createResearchSynapse from './researchSynapse.js';
         try {
           const _usedTools = holder.querySelector('.agent-thread-node');
           const _proseLen = (accumulated || '').replace(/<[^>]*>/g, '').trim().length;
-          if (_usedTools && _proseLen < 24 && !holder.querySelector('.agent-continue-btn')) {
+          // Not for claude_code: its durable session legitimately ends some tool
+          // turns with short prose ("Saved.") — a "Continue" here would poke a
+          // finished session and elicit "No response requested." poisoning.
+          if (holder._streamEngine !== 'claude_code' && _usedTools && _proseLen < 24 && !holder.querySelector('.agent-continue-btn')) {
             const _stall = document.createElement('div');
             _stall.className = 'stopped-indicator';
             const _lbl = document.createElement('span');
@@ -2616,23 +2629,26 @@ import createResearchSynapse from './researchSynapse.js';
             const stoppedLabel = document.createElement('span');
             stoppedLabel.textContent = '[Message interrupted]';
             stoppedIndicator.appendChild(stoppedLabel);
-            const continueBtn = document.createElement('button');
-            continueBtn.className = 'continue-btn';
-            continueBtn.title = 'Continue';
-            continueBtn.textContent = '\u25B8';
-            continueBtn.addEventListener('click', () => {
-              stoppedIndicator.remove();
-              _hideUserBubble = true;
-              _pendingContinue = holder;
-              const cutoff = accumulated;
-              const msgInput = uiModule.el('message');
-              if (msgInput) {
-                msgInput.value = 'Your previous response was interrupted. It ended with:\n\n' + cutoff.slice(-500) + '\n\nDo NOT repeat what you already said. Continue exactly from where you were cut off.';
-                const sb = document.querySelector('.send-btn');
-                if (sb) sb.click();
-              }
-            });
-            stoppedIndicator.appendChild(continueBtn);
+            // No "Continue" for claude_code (durable session \u2014 see model_info note).
+            if (holder._streamEngine !== 'claude_code') {
+              const continueBtn = document.createElement('button');
+              continueBtn.className = 'continue-btn';
+              continueBtn.title = 'Continue';
+              continueBtn.textContent = '\u25B8';
+              continueBtn.addEventListener('click', () => {
+                stoppedIndicator.remove();
+                _hideUserBubble = true;
+                _pendingContinue = holder;
+                const cutoff = accumulated;
+                const msgInput = uiModule.el('message');
+                if (msgInput) {
+                  msgInput.value = 'Your previous response was interrupted. It ended with:\n\n' + cutoff.slice(-500) + '\n\nDo NOT repeat what you already said. Continue exactly from where you were cut off.';
+                  const sb = document.querySelector('.send-btn');
+                  if (sb) sb.click();
+                }
+              });
+              stoppedIndicator.appendChild(continueBtn);
+            }
             holder.querySelector('.body').appendChild(stoppedIndicator);
 
             // Tell server to mark this message as stopped
@@ -2666,7 +2682,11 @@ import createResearchSynapse from './researchSynapse.js';
           // cap. Only auto-recover from connection-class failures; deterministic
           // errors (unsupported tools, 4xx/5xx, parse failures) surface right away
           // instead of burning the nudge budget on a guaranteed-to-fail retry.
-          if (!(_isRecoverableStreamErr(err) && _tryAutoRecover(holder, accumulated, streamSessionId))) {
+          // claude_code never auto-continues — its durable session must not be
+          // poked with a synthetic handshake; surface the error and let the user
+          // resume with a normal message.
+          const _ccStream = !!(holder && holder._streamEngine === 'claude_code');
+          if (_ccStream || !(_isRecoverableStreamErr(err) && _tryAutoRecover(holder, accumulated, streamSessionId))) {
             const errorHolder = document.querySelector('.msg-ai:last-of-type .body');
             if (errorHolder) {
               let errMsg = `Error: ${err.message}`;
