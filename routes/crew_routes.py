@@ -58,6 +58,7 @@ class AgentUpdate(BaseModel):
     color: Optional[str] = None
     category: Optional[str] = None
     timezone: Optional[str] = None
+    engine: Optional[str] = None   # "legacy" | "claude_code"
 
 
 def setup_crew_routes() -> APIRouter:
@@ -139,6 +140,30 @@ def setup_crew_routes() -> APIRouter:
             db.commit()
             db.refresh(crew)
             return {"agent": cs.crew_to_dict(crew)}
+        finally:
+            db.close()
+
+    @router.post("/{agent_id}/reset_session")
+    async def reset_agent_session(agent_id: str, request: Request):
+        """Start a fresh Claude Code session for this agent: archive the current
+        ongoing chat (kept searchable) and mint a new session, so the agent's
+        working memory resets while the past chat is preserved."""
+        owner = _owner(request)
+        db = SessionLocal()
+        try:
+            crew = cs.find_agent(db, agent_id, owner)
+            if not crew:
+                raise HTTPException(status_code=404, detail="Agent not found")
+            old_session = crew.session_id
+            if old_session:
+                row = db.query(DbSession).filter(DbSession.id == old_session).first()
+                if row:
+                    row.archived = True
+            crew.session_id = None
+            crew.claude_session_id = None  # mints a new claude session on next message
+            db.commit()
+            new_sid = cs.get_or_create_agent_session(db, crew, None)
+            return {"ok": True, "archived_session": old_session, "new_session": new_sid}
         finally:
             db.close()
 

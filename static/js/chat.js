@@ -1931,6 +1931,11 @@ import createResearchSynapse from './researchSynapse.js';
                 node.className = 'agent-thread-node running';
                 const cmdHtml = cmd ? `<pre class="agent-thread-cmd">${esc(cmd)}</pre>` : '';
                 node.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">\u25B6</span><span class="agent-thread-tool">${toolLabel}</span><span class="agent-thread-wave">▁▂▃</span></div><div class="agent-thread-content">${cmdHtml}</div>`;
+                // Tag with the engine's tool_use id so tool_output can pair to THIS
+                // exact node even when tools run in parallel (Claude Code emits tool
+                // calls in batches: start1,start2 then output1,output2). Legacy SSE
+                // sends no id and falls back to the currentToolBubble pointer below.
+                if (json.tool_use_id) node.dataset.toolUseId = json.tool_use_id;
                 // Expand/collapse via delegated click handler (init at module bottom).
                 threadWrap.appendChild(node);
                 currentToolBubble = node;
@@ -1992,6 +1997,14 @@ import createResearchSynapse from './researchSynapse.js';
 
               } else if (json.type === 'tool_output') {
                 if (_isBg) continue;
+                // Pair to the exact node by tool_use id (parallel-safe). The engine
+                // tags each tool_start node with data-tool-use-id; match the still-
+                // running one. Legacy SSE has no id → keep the sequential pointer.
+                if (json.tool_use_id) {
+                  const _idSel = (window.CSS && CSS.escape) ? CSS.escape(json.tool_use_id) : json.tool_use_id;
+                  const _byId = document.querySelector(`.agent-thread-node.running[data-tool-use-id="${_idSel}"]`);
+                  if (_byId) currentToolBubble = _byId;
+                }
                 // --- Update the current thread node ---
                 if (currentToolBubble) {
                   // Stop wave animation + the per-second cooking ticker

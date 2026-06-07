@@ -518,8 +518,10 @@ export function renderAgentDashboard(agent) {
       <button class="dash-tab" data-t="activity">Activity</button>
       <button class="dash-tab" data-t="chats">Chats</button>
     </div>
-    <div id="dash-pane" style="flex:1;min-height:0;overflow:auto;"></div>`;
+    <div id="dash-pane" style="flex:1;min-height:0;overflow:auto;"></div>
+    <div id="dash-engine-footer" class="dash-engine-footer"></div>`;
   body.querySelector('#dash-back').addEventListener('click', renderRoster);
+  _renderEngineFooter(body, agent);
   const pane = body.querySelector('#dash-pane');
   const tabs = body.querySelectorAll('.dash-tab');
   const show = (t) => {
@@ -532,6 +534,60 @@ export function renderAgentDashboard(agent) {
   };
   tabs.forEach(b => b.addEventListener('click', () => show(b.dataset.t)));
   show('persona');
+}
+
+// Engine selector + (for Claude Code agents) the "open this session in a real
+// terminal" command and a "Reset session" control. Lives at the bottom of the
+// per-agent dashboard.
+function _renderEngineFooter(body, agent) {
+  const foot = body.querySelector('#dash-engine-footer');
+  if (!foot) return;
+  const eng = agent.engine || 'legacy';
+  const isCC = eng === 'claude_code';
+  const sid = agent.claude_session_id;
+  const cmd = sid ? `cd data/agents/${agent.id} && claude --resume ${sid}` : '';
+  const term = !isCC ? '' : (sid
+    ? `<div class="dash-term"><span class="dash-term-label">Open this agent's live session in your terminal (from your odysseus folder):</span>
+         <code class="dash-term-cmd">${esc(cmd)}</code>
+         <button class="agent-act" id="dash-term-copy">Copy</button></div>`
+    : `<div class="dash-term dash-term-label">A terminal command (claude --resume …) appears here after this agent's first message.</div>`);
+  foot.innerHTML = `
+    <div class="dash-engine-row">
+      <span class="dash-term-label">Engine</span>
+      <select id="dash-engine-sel" class="settings-input" style="width:auto;">
+        <option value="legacy"${!isCC ? ' selected' : ''}>Legacy (claude -p)</option>
+        <option value="claude_code"${isCC ? ' selected' : ''}>Claude Code session (full capability)</option>
+      </select>
+      ${isCC ? '<button class="agent-act" id="dash-reset-session" title="Archive the current chat (kept searchable) and start a fresh session">Reset session</button>' : ''}
+    </div>
+    ${term}`;
+  foot.querySelector('#dash-engine-sel')?.addEventListener('change', async (e) => {
+    const v = e.target.value;
+    try {
+      await fetch(`${API}/api/agents/${agent.id}`, {
+        method: 'PATCH', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ engine: v }),
+      });
+      agent.engine = v; _agentCache = null;
+      _renderEngineFooter(body, agent);
+      uiModule.showToast(v === 'claude_code' ? 'Switched to Claude Code session' : 'Switched to legacy engine');
+    } catch (err) { uiModule.showError('Could not switch engine: ' + err.message); }
+  });
+  foot.querySelector('#dash-term-copy')?.addEventListener('click', () => {
+    try { uiModule.copyToClipboard(cmd); uiModule.showToast('Command copied'); } catch (_) {}
+  });
+  foot.querySelector('#dash-reset-session')?.addEventListener('click', async () => {
+    if (window.styledConfirm && !await window.styledConfirm(
+        "Start a fresh session? The current chat is archived (still searchable) and the agent's working memory resets.",
+        { confirmText: 'Reset', danger: true })) return;
+    try {
+      const r = await (await fetch(`${API}/api/agents/${agent.id}/reset_session`, { method: 'POST', credentials: 'same-origin' })).json();
+      agent.claude_session_id = null; if (r.new_session) agent.session_id = r.new_session;
+      _agentCache = null;
+      _renderEngineFooter(body, agent);
+      uiModule.showToast('Session reset — past chat archived');
+    } catch (err) { uiModule.showError('Reset failed: ' + err.message); }
+  });
 }
 
 function _dashPersona(pane, agent) {

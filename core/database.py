@@ -489,6 +489,13 @@ class CrewMember(TimestampMixin, Base):
     color         = Column(String, nullable=True)           # avatar accent color (hex/name) for the roster
     category      = Column(String, nullable=True)           # grouping/template category, e.g. "assistant"|"research"
     status        = Column(String, nullable=True)           # NULL/"active" = real agent; "draft" = in-progress builder draft
+    # Reasoning engine for this agent's chats. "legacy" = the claude -p sidecar +
+    # Odysseus's own tool loop. "claude_code" = a persistent full-capability Claude
+    # Code session (its native tools + Odysseus tools via MCP). Phased rollout.
+    engine            = Column(String, default="legacy")
+    # Stable `claude --session-id` UUID for the agent's persistent Claude Code
+    # session (minted lazily on the first claude_code turn).
+    claude_session_id = Column(String, nullable=True)
 
     session = relationship("Session", foreign_keys=[session_id],
                            backref=backref("crew_member", uselist=False))
@@ -1363,6 +1370,24 @@ def _migrate_add_agent_columns():
         logging.getLogger(__name__).warning(f"assistant columns migration: {e}")
 
 
+def _migrate_add_engine_columns():
+    """Add engine + claude_session_id to crew_members for the phased Claude Code
+    rollout (idempotent — safe to re-run). Every agent defaults to "legacy" so
+    this is a zero-behavior-change migration until an agent is flipped."""
+    try:
+        with engine.connect() as conn:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(crew_members)"))]
+            if "engine" not in cols:
+                conn.execute(text("ALTER TABLE crew_members ADD COLUMN engine VARCHAR DEFAULT 'legacy'"))
+                conn.commit()
+                logging.getLogger(__name__).info("Added engine column to crew_members")
+            if "claude_session_id" not in cols:
+                conn.execute(text("ALTER TABLE crew_members ADD COLUMN claude_session_id VARCHAR"))
+                conn.commit()
+                logging.getLogger(__name__).info("Added claude_session_id column to crew_members")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"engine columns migration: {e}")
+
 
 
 
@@ -1553,6 +1578,7 @@ def init_db():
     _migrate_add_crew_member_id()
     _migrate_add_assistant_columns()
     _migrate_add_agent_columns()
+    _migrate_add_engine_columns()
     _migrate_add_learned_guidance()
     _migrate_assign_default_agent_to_tasks()
     _migrate_seed_email_account()

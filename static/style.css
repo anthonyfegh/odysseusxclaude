@@ -34485,3 +34485,10 @@ body.theme-frosted .modal {
   background-color: color-mix(in srgb, var(--accent, var(--red)) 10%, transparent);
   transform: translateX(1px);
 }
+
+/* Per-agent dashboard: engine selector + "open in terminal" + reset session. */
+.dash-engine-footer { border-top: 1px solid var(--border); padding: 8px 4px 2px; margin-top: 6px; }
+.dash-engine-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dash-term { margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dash-term-label { font-size: 11px; opacity: 0.6; }
+.dash-term-cmd { font-size: 11px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; user-select: all; word-break: break-all; }

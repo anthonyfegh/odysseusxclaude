@@ -57,7 +57,36 @@ def crew_to_dict(c: CrewMember) -> Dict[str, Any]:
         "sort_order": c.sort_order or 0,
         "is_active": bool(c.is_active),
         "allow_autonomous_email": any(t in EMAIL_TOOLS for t in tools),
+        "engine": getattr(c, "engine", None) or "legacy",
+        "claude_session_id": getattr(c, "claude_session_id", None),
     }
+
+
+def get_or_create_agent_session(db, crew: CrewMember, session_manager=None) -> str:
+    """Return the agent's single ONGOING Odysseus chat session id, creating it if
+    absent. Under the claude_code engine each agent has exactly one eternal chat
+    (CrewMember.session_id) that holds its full permanent transcript; this is the
+    one front-door for both interactive chat and scheduled tasks."""
+    from datetime import datetime
+    if crew.session_id:
+        s = db.query(DbSession).filter(
+            DbSession.id == crew.session_id, DbSession.archived == False).first()
+        if s:
+            return s.id
+    sid = uuid.uuid4().hex
+    s = DbSession(
+        id=sid, name=crew.name, endpoint_url=(crew.endpoint_url or ""),
+        model=(crew.model or ""), owner=crew.owner, crew_member_id=crew.id,
+        archived=False, created_at=datetime.utcnow(), updated_at=datetime.utcnow())
+    db.add(s)
+    crew.session_id = sid
+    db.commit()
+    if session_manager is not None:
+        try:
+            session_manager.sessions[sid] = session_manager._db_to_session_meta(s)
+        except Exception:
+            pass
+    return sid
 
 
 # Sentinel so "field present and set to None/empty" is distinguishable from
@@ -73,6 +102,9 @@ def apply_crew_fields(crew_db: CrewMember, fields: Dict[str, Any]) -> None:
     for key in ("model", "endpoint_url", "timezone"):
         if key in fields and fields[key] is not None:
             setattr(crew_db, key, (fields[key] or None))
+    # Reasoning engine flip (phased Claude Code rollout). Only valid values.
+    if fields.get("engine") in ("legacy", "claude_code"):
+        crew_db.engine = fields["engine"]
 
     # Tool list: explicit list, the literal "all", or the convenience email toggle.
     if "enabled_tools" in fields and fields["enabled_tools"] is not None:

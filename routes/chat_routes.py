@@ -693,6 +693,98 @@ def setup_chat_routes(
                 _model_info["character_name"] = ctx.preset.character_name
             yield f'data: {json.dumps(_model_info)}\n\n'
 
+            # ── Claude Code engine ──────────────────────────────────────────
+            # For agents flipped to engine="claude_code", drive a full-capability
+            # persistent Claude Code session (its native tools + Odysseus tools via
+            # the odysseus MCP proxy) instead of the legacy sidecar loop. The engine
+            # emits the SAME SSE contract, so the frontend is unchanged. Two-layer
+            # persistence: the claude session owns its (self-compacting) context via
+            # --resume; we still store the full assistant message here. Gated by a
+            # master kill-switch so legacy agents are entirely untouched.
+            if _crew and getattr(_crew, "engine", "legacy") == "claude_code":
+                from src.settings import get_setting as _gs_cc
+                if _gs_cc("claude_code_engine_enabled", True):
+                    from src.claude_code_engine import stream_claude_code_session
+                    _cc_rounds = 0
+                    _cc_calls = 0
+                    _cc_starts: Dict[str, dict] = {}
+                    _cc_tool_events: list = []
+                    try:
+                        async for chunk in stream_claude_code_session(
+                            crew=_crew, chat_session_id=session, message=message,
+                            owner=_user, workspace_root=_workspace_root,
+                        ):
+                            if chunk == "data: [DONE]\n\n":
+                                if full_response and not incognito:
+                                    _saved_id = save_assistant_response(
+                                        sess, session_manager, session, full_response,
+                                        last_metrics, tool_events=(_cc_tool_events or None),
+                                        incognito=incognito,
+                                    )
+                                    if _saved_id:
+                                        yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
+                                    try:
+                                        run_post_response_tasks(
+                                            sess, session_manager, session, message, full_response,
+                                            last_metrics, ctx.uprefs, memory_manager, memory_vector,
+                                            webhook_manager, incognito=incognito, owner=_user,
+                                            agent_rounds=_cc_rounds, agent_tool_calls=_cc_calls,
+                                            skills_manager=skills_manager, extract_skills=False,
+                                        )
+                                    except Exception:
+                                        logger.exception("claude_code post-response tasks failed")
+                                _stream_set(session, status="done")
+                                yield chunk
+                                continue
+                            if chunk.startswith("data: "):
+                                try:
+                                    _d = json.loads(chunk[6:])
+                                except json.JSONDecodeError:
+                                    yield chunk
+                                    continue
+                                _t = _d.get("type")
+                                if "delta" in _d:
+                                    if not _d.get("thinking"):
+                                        full_response += _d["delta"]
+                                        _stream_set(session, partial=full_response)
+                                elif _t == "metrics":
+                                    last_metrics = _d.get("data", {}) or {}
+                                    last_metrics.setdefault("model", sess.model)
+                                elif _t == "model_info":
+                                    continue  # already emitted above; avoid a duplicate
+                                elif _t == "tool_start":
+                                    _cc_calls += 1
+                                    _cc_starts[_d.get("tool_use_id")] = {
+                                        "round": _d.get("round", 1), "tool": _d.get("tool"),
+                                        "command": _d.get("command", ""),
+                                    }
+                                elif _t == "tool_output":
+                                    _st = _cc_starts.get(_d.get("tool_use_id"), {})
+                                    _cc_tool_events.append({
+                                        "round": _st.get("round", _d.get("round", 1)),
+                                        "tool": _st.get("tool") or _d.get("tool"),
+                                        "command": _st.get("command", ""),
+                                        "output": _d.get("output", ""),
+                                        "exit_code": _d.get("exit_code", 0),
+                                    })
+                                elif _t == "agent_step":
+                                    _cc_rounds = max(_cc_rounds, _d.get("round", 1))
+                                yield chunk
+                            else:
+                                yield chunk
+                    except (asyncio.CancelledError, GeneratorExit):
+                        try:
+                            if full_response:
+                                _sc, _smd = clean_thinking_for_save(full_response, {"stopped": True, "model": sess.model})
+                                sess.add_message(ChatMessage("assistant", _sc, metadata=_smd))
+                                if not incognito:
+                                    session_manager.save_sessions()
+                        except Exception:
+                            logger.exception("claude_code save-partial-on-disconnect failed")
+                        raise
+                    _active_streams.pop(session, None)
+                    return
+
             # Detect image models and route directly to image generation
             _IMAGE_MODEL_PREFIXES = ("gpt-image", "dall-e", "chatgpt-image")
             _is_image_model = any(sess.model.lower().startswith(p) for p in _IMAGE_MODEL_PREFIXES)
