@@ -188,6 +188,18 @@ def _stringify_input(name: str, inp) -> str:
         return str(inp)[:2000]
 
 
+def _image_resource_data_uri(b: dict):
+    """If `b` is an MCP embedded-resource block carrying an image blob
+    ({"type":"resource","resource":{"blob":..,"mimeType":"image/.."}}), return a
+    data: URI for it, else None. Lets a screenshot delivered as a resource render
+    instead of dumping its base64 blob into the text bubble."""
+    r = b.get("resource") if isinstance(b, dict) else None
+    if (isinstance(r, dict) and r.get("blob")
+            and str(r.get("mimeType", "")).startswith("image/")):
+        return f"data:{r['mimeType']};base64,{r['blob']}"
+    return None
+
+
 def _flatten_tool_result(content) -> str:
     if isinstance(content, str):
         return content[:2000]
@@ -196,10 +208,67 @@ def _flatten_tool_result(content) -> str:
         for b in content:
             if isinstance(b, dict) and b.get("type") == "text":
                 parts.append(b.get("text", ""))
+            elif isinstance(b, dict) and (b.get("type") == "image" or _image_resource_data_uri(b)):
+                parts.append("[image]")  # forwarded separately (see _extract_tool_result_images), NOT dumped as base64
             elif isinstance(b, dict):
                 parts.append(json.dumps(b, default=str))
         return ("\n".join(parts))[:2000]
     return str(content)[:2000]
+
+
+def _extract_tool_result_images(content) -> list:
+    """Pull any images out of a tool_result's content so they render in the chat
+    bubble instead of being flattened away. Handles the Anthropic block shape
+    {"type":"image","source":{"type":"base64","media_type":..,"data":..}} (and
+    source.type=="url"), the raw MCP image shape {"type":"image","data":..,
+    "mimeType":..} (incl. a non-spec top-level "url"), and an MCP embedded-image
+    resource. Returns a list of <img src> values (data: URIs or plain URLs) the
+    frontend can drop straight into <img>."""
+    out = []
+    if not isinstance(content, list):
+        return out
+    for b in content:
+        if not isinstance(b, dict):
+            continue
+        if b.get("type") == "image":
+            src = b.get("source")
+            if isinstance(src, dict):
+                if src.get("type") == "base64" and src.get("data"):
+                    mt = src.get("media_type") or "image/png"
+                    out.append(f"data:{mt};base64,{src['data']}")
+                elif src.get("type") == "url" and src.get("url"):
+                    out.append(src["url"])
+            elif b.get("data"):  # raw MCP image content
+                mt = b.get("mimeType") or "image/png"
+                out.append(f"data:{mt};base64,{b['data']}")
+            elif b.get("url"):  # non-spec top-level url some MCP servers emit
+                out.append(b["url"])
+        else:  # MCP embedded resource carrying an image blob
+            uri = _image_resource_data_uri(b)
+            if uri:
+                out.append(uri)
+    return out
+
+
+def _tool_result_event(b: dict, tool_label: str, round_num: int) -> dict:
+    """Map a claude stream-json tool_result block to a tool_output SSE dict,
+    forwarding any image (e.g. a browser screenshot) as `screenshot` so it
+    renders inline in the tool bubble. Mirrors agent_loop's images[0] forwarding;
+    the frontend (chat.js) renders a single `screenshot`, so extra images are
+    noted in the output text rather than silently dropped."""
+    ok = not b.get("is_error")
+    evt = {"type": "tool_output",
+           "tool": tool_label,
+           "output": _flatten_tool_result(b.get("content")),
+           "exit_code": 0 if ok else 1,
+           "round": round_num,
+           "tool_use_id": b.get("tool_use_id")}
+    imgs = _extract_tool_result_images(b.get("content"))
+    if imgs:
+        evt["screenshot"] = imgs[0]
+        if len(imgs) > 1:
+            evt["output"] = (evt["output"] + f"\n[+{len(imgs) - 1} more image(s)]").strip()
+    return evt
 
 
 def _sse(obj) -> str:
@@ -332,14 +401,9 @@ async def stream_claude_code_session(
                 blocks = (ev.get("message") or {}).get("content") or []
                 for b in blocks:
                     if isinstance(b, dict) and b.get("type") == "tool_result":
-                        ok = not b.get("is_error")
                         tuid = b.get("tool_use_id")
-                        yield _sse({"type": "tool_output",
-                                    "tool": _tool_label(tool_names.get(tuid, "tool")),
-                                    "output": _flatten_tool_result(b.get("content")),
-                                    "exit_code": 0 if ok else 1,
-                                    "round": round_num,
-                                    "tool_use_id": tuid})
+                        yield _sse(_tool_result_event(
+                            b, _tool_label(tool_names.get(tuid, "tool")), round_num))
                         tool_pending_step = True  # next text opens a fresh bubble
                 continue
 
