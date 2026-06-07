@@ -1790,6 +1790,11 @@ async def stream_agent_loop(
         # mirroring Terminus's explicit-completion handshake.
         _sig = "|".join(sorted(f"{b.tool_type}:{(b.content or '').strip()[:120]}" for b in tool_blocks))
         _is_repeat = _sig in _recent_call_sigs
+        # The EXACT same call as the immediately-preceding round is a tight loop
+        # (e.g. re-running `pwd` whose result we already have) — never progress,
+        # so we break on the 2nd such back-to-back repeat instead of waiting for
+        # the looser circling streak below.
+        _consec_identical = bool(_recent_call_sigs) and _recent_call_sigs[-1] == _sig
         _recent_call_sigs.append(_sig)
         for _b in tool_blocks:
             _tool_type_counts[_b.tool_type] += 1
@@ -1804,8 +1809,11 @@ async def stream_agent_loop(
         else:
             _stuck_rounds = 0
         _runaway = next((t for t, n in _tool_type_counts.items() if n >= 15), None)
-        if _stuck_rounds >= 4 or _runaway:
+        # Tight loop: the same exact call back-to-back with no new answer text.
+        _tight_loop = _consec_identical and not _real_text
+        if _stuck_rounds >= 4 or _runaway or _tight_loop:
             reason = (f"calling {_runaway} over and over" if _runaway
+                      else "re-running the identical tool call" if _tight_loop
                       else "repeating the same tool calls without new progress")
             logger.warning(f"[agent] loop-breaker tripped on round {round_num} ({reason}); sig={_sig[:80]!r}")
             # The model has been executing tools, so its results are already
