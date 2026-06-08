@@ -73,20 +73,60 @@ def _short_model(model: Optional[str]) -> str:
     return "claude-sonnet-4-6"
 
 
-def _ensure_claude_session_id(crew_id: str) -> tuple:
-    """Return (session_uuid, is_new). Mints + persists CrewMember.claude_session_id
-    on first use so create-vs-resume is race-free."""
-    from core.database import SessionLocal, CrewMember
+def _ensure_claude_session_id(chat_session_id: str, crew_id: str = None) -> tuple:
+    """Return (session_uuid, is_new) for the claude session bound to THIS chat.
+
+    Keyed on the Odysseus chat (DbSession.claude_session_id), 1:1 and for life, so
+    the --resume id always names this chat's transcript and can never straddle two
+    claude sessions (the old per-agent field could be overwritten mid-chat). Mirrors
+    onto the agent (CrewMember.claude_session_id) ONLY when this is the agent's
+    active chat, so the dashboard footer shows the right id without an older/archived
+    chat clobbering it."""
+    from core.database import SessionLocal, CrewMember, Session as DbSession
     db = SessionLocal()
     try:
-        row = db.query(CrewMember).filter(CrewMember.id == crew_id).first()
-        if row and row.claude_session_id:
-            return row.claude_session_id, False
+        s = db.query(DbSession).filter(DbSession.id == chat_session_id).first() if chat_session_id else None
+        if s and s.claude_session_id:
+            return s.claude_session_id, False
         sid = str(uuid.uuid4())
-        if row:
-            row.claude_session_id = sid
+        dirty = False
+        if s:
+            s.claude_session_id = sid
+            dirty = True
+        if crew_id:
+            crew = db.query(CrewMember).filter(CrewMember.id == crew_id).first()
+            if crew and getattr(crew, "session_id", None) == chat_session_id:
+                crew.claude_session_id = sid  # footer mirror — active chat only
+                dirty = True
+        if dirty:
             db.commit()
         return sid, True
+    finally:
+        db.close()
+
+
+def _reconcile_claude_session_id(chat_session_id: str, crew_id: str, real_id: str) -> None:
+    """Self-heal: if claude's `system/init` event reports a DIFFERENT session id than
+    we requested (a fork/collision), rebind the chat (and the footer mirror, if this
+    is the active chat) to the REAL id so --resume keeps naming a transcript that
+    actually exists. Normally a no-op (claude honors the requested id)."""
+    from core.database import SessionLocal, CrewMember, Session as DbSession
+    db = SessionLocal()
+    try:
+        dirty = False
+        s = db.query(DbSession).filter(DbSession.id == chat_session_id).first() if chat_session_id else None
+        if s and s.claude_session_id != real_id:
+            s.claude_session_id = real_id
+            dirty = True
+        if crew_id:
+            crew = db.query(CrewMember).filter(CrewMember.id == crew_id).first()
+            if crew and getattr(crew, "session_id", None) == chat_session_id and crew.claude_session_id != real_id:
+                crew.claude_session_id = real_id
+                dirty = True
+        if dirty:
+            db.commit()
+    except Exception:
+        logger.exception("reconcile claude_session_id failed")
     finally:
         db.close()
 
@@ -290,7 +330,8 @@ async def stream_claude_code_session(
         except Exception:
             workspace_root = tempfile.gettempdir()
 
-    session_uuid, is_new = _ensure_claude_session_id(crew_id)
+    session_uuid, is_new = _ensure_claude_session_id(chat_session_id, crew_id)
+    actual_session_id = session_uuid  # corrected from claude's init event if it forks
     mcp_cfg_path = _odysseus_mcp_config(owner, crew_id, workspace_root, chat_session_id)
 
     argv = [
@@ -361,6 +402,16 @@ async def stream_claude_code_session(
             except Exception:
                 continue
             t = ev.get("type")
+
+            if t == "system" and ev.get("subtype") == "init":
+                # claude reports its REAL session id here. If it ever differs from
+                # what we asked to resume (a fork/collision), rebind the chat to the
+                # real id so future --resume keeps working. Normally a no-op.
+                _real = ev.get("session_id")
+                if _real and _real != actual_session_id:
+                    actual_session_id = _real
+                    _reconcile_claude_session_id(chat_session_id, crew_id, _real)
+                continue
 
             if t == "stream_event":
                 se = ev.get("event") or {}
@@ -437,7 +488,7 @@ async def stream_claude_code_session(
             "input_tokens": usage.get("input_tokens"),
             "output_tokens": usage.get("output_tokens"),
             "response_time": ((last_result or {}).get("duration_ms") or 0) / 1000.0,
-            "claude_session_id": session_uuid,
+            "claude_session_id": actual_session_id,
         }})
     except (asyncio.CancelledError, GeneratorExit):
         raise

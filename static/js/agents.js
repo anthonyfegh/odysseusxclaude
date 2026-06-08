@@ -625,13 +625,23 @@ async function _dashChats(pane, agent) {
   try {
     const r = await (await fetch(`${API}/api/sessions?crew_member_id=${encodeURIComponent(agent.id)}`, { credentials: 'same-origin' })).json();
     const arr = Array.isArray(r) ? r : (r.sessions || []);
-    pane.innerHTML = arr.length ? arr.map(s => `
+    pane.innerHTML = arr.length ? arr.map(s => {
+      // Each chat owns its own claude session — show the exact resume command for
+      // THIS chat (the id always matches this chat's transcript now).
+      const cmd = s.claude_session_id ? `cd data/agents/${agent.id} && claude --resume ${s.claude_session_id}` : '';
+      return `
       <div class="dash-row dash-click" data-sid="${esc(s.id)}">
         <div style="flex:1;min-width:0;">
           <div class="dash-row-title">${esc(s.name || 'Chat')}</div>
           <div class="dash-row-meta">${esc(_reltime(s.last_message_at))}${s.message_count ? ` · ${s.message_count} msgs` : ''}</div>
+          ${cmd ? `<div class="dash-term"><code class="dash-term-cmd" style="font-size:11px;">${esc(cmd)}</code><button class="agent-act dash-chat-copy" data-cmd="${esc(cmd)}" title="Copy resume command">Copy</button></div>` : ''}
         </div>
-      </div>`).join('') : '<div class="agents-empty">No chats with this agent yet.</div>';
+      </div>`;
+    }).join('') : '<div class="agents-empty">No chats with this agent yet.</div>';
+    pane.querySelectorAll('.dash-chat-copy').forEach(btn => btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      try { uiModule.copyToClipboard(btn.dataset.cmd); uiModule.showToast('Resume command copied'); } catch (_) {}
+    }));
     pane.querySelectorAll('.dash-click').forEach(row => row.addEventListener('click', () => {
       closeManager();
       if (window.sessionModule?.selectSession) window.sessionModule.selectSession(row.dataset.sid);

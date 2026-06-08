@@ -110,10 +110,12 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             mode_map = {}
             msg_count_map = {}
             crew_map = {}
-            rows = db.query(DbSession.id, DbSession.folder, DbSession.total_input_tokens, DbSession.total_output_tokens, DbSession.is_important, DbSession.created_at, DbSession.updated_at, DbSession.last_message_at, DbSession.mode, DbSession.message_count, DbSession.crew_member_id).filter(DbSession.archived == False).all()
+            claude_session_map = {}
+            rows = db.query(DbSession.id, DbSession.folder, DbSession.total_input_tokens, DbSession.total_output_tokens, DbSession.is_important, DbSession.created_at, DbSession.updated_at, DbSession.last_message_at, DbSession.mode, DbSession.message_count, DbSession.crew_member_id, DbSession.claude_session_id).filter(DbSession.archived == False).all()
             for row in rows:
                 folder_map[row.id] = row.folder
                 crew_map[row.id] = row.crew_member_id
+                claude_session_map[row.id] = row.claude_session_id
                 token_map[row.id] = (row.total_input_tokens or 0) + (row.total_output_tokens or 0)
                 important_map[row.id] = row.is_important or False
                 created_map[row.id] = row.created_at.isoformat() if row.created_at else None
@@ -156,7 +158,8 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                      "has_images": s.id in img_session_ids,
                      "mode": mode_map.get(s.id),
                      "message_count": msg_count_map.get(s.id, 0),
-                     "crew_member_id": crew_map.get(s.id)}
+                     "crew_member_id": crew_map.get(s.id),
+                     "claude_session_id": claude_session_map.get(s.id)}
                     for s in user_sessions.values()
                     if not s.archived
                     and (s.name or "").strip() not in ("Nobody", "Incognito")

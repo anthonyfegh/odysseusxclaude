@@ -108,6 +108,11 @@ class Session(TimestampMixin, Base):
     total_output_tokens = Column(Integer, default=0)
     mode = Column(String, nullable=True)  # 'agent', 'chat', or 'research'
     crew_member_id = Column(String, nullable=True)  # links to crew_members.id
+    # The claude --resume id bound to THIS chat. One chat == one claude session,
+    # for life — so the stored id always names this chat's transcript and can never
+    # straddle two claude sessions (the old per-agent field could be overwritten
+    # mid-chat). Minted lazily on the first claude_code turn for this chat.
+    claude_session_id = Column(String, nullable=True)
 
     # Relationship to chat messages
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
@@ -136,6 +141,7 @@ class Session(TimestampMixin, Base):
             'total_input_tokens': self.total_input_tokens or 0,
             'total_output_tokens': self.total_output_tokens or 0,
             'crew_member_id': self.crew_member_id,
+            'claude_session_id': self.claude_session_id,
         }
 
 class ChatMessage(Base):
@@ -1423,6 +1429,58 @@ def _migrate_default_engine_claude_code():
         logging.getLogger(__name__).warning(f"engine default backfill: {e}")
 
 
+def _migrate_add_chat_claude_session_id():
+    """Bind the persistent Claude Code session to the CHAT instead of the agent.
+
+    Adds sessions.claude_session_id (idempotent) and BEST-EFFORT backfills each
+    agent's current active chat from the old per-agent crew_members.claude_session_id
+    — so an existing ongoing chat keeps resuming the same transcript. This is lossy
+    by nature: an agent whose chat straddled two claude sessions (the old per-agent
+    field was overwritten mid-chat) can only be pointed at the LIVE tail; the older
+    half stays in its own transcript file. Such agents are logged so the split is
+    discoverable rather than silent."""
+    log = logging.getLogger(__name__)
+    try:
+        with engine.connect() as conn:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(sessions)"))]
+            if "claude_session_id" not in cols:
+                conn.execute(text("ALTER TABLE sessions ADD COLUMN claude_session_id VARCHAR"))
+                conn.commit()
+                log.info("Added claude_session_id column to sessions")
+            # Backfill + de-dup. The agent's old per-agent claude id legitimately
+            # belongs to its PINNED chat (crew_members.session_id) — the engine
+            # mirrors the agent field from exactly that chat. So: (1) bind the pinned
+            # chat to the agent's claude id when the pin and the chat's own crew
+            # binding AGREE; (2) strip that same id off EVERY OTHER chat, undoing any
+            # reverse-straddle that earlier experiments left behind (several chats
+            # sharing one claude session — which is how resuming one chat showed
+            # another's conversation). Agents whose pin is missing or points at a chat
+            # owned by a different agent (binding drift) are skipped — their chats just
+            # mint a fresh per-chat claude session on the next turn (safe, never wrong).
+            # Idempotent: after F1 each claude id lives on exactly one chat, so re-runs
+            # are no-ops.
+            crew_rows = conn.execute(text(
+                "SELECT id, session_id, claude_session_id FROM crew_members "
+                "WHERE claude_session_id IS NOT NULL AND claude_session_id != '' "
+                "AND session_id IS NOT NULL AND session_id != ''")).fetchall()
+            for crew_id, pin, ccid in crew_rows:
+                owned = conn.execute(text(
+                    "SELECT 1 FROM sessions WHERE id = :pin AND crew_member_id = :crew_id"),
+                    {"pin": pin, "crew_id": crew_id}).fetchone()
+                if not owned:
+                    continue  # pin missing or bound to a different agent — skip
+                conn.execute(text(
+                    "UPDATE sessions SET claude_session_id = :ccid WHERE id = :pin"),
+                    {"ccid": ccid, "pin": pin})
+                conn.execute(text(
+                    "UPDATE sessions SET claude_session_id = NULL "
+                    "WHERE claude_session_id = :ccid AND id != :pin"),
+                    {"ccid": ccid, "pin": pin})
+            conn.commit()
+    except Exception as e:
+        log.warning(f"chat claude_session_id migration: {e}")
+
+
 class Note(TimestampMixin, Base):
     """A Google Keep-style note or checklist."""
     __tablename__ = "notes"
@@ -1612,6 +1670,7 @@ def init_db():
     _migrate_add_agent_columns()
     _migrate_add_engine_columns()
     _migrate_default_engine_claude_code()
+    _migrate_add_chat_claude_session_id()
     _migrate_add_learned_guidance()
     _migrate_assign_default_agent_to_tasks()
     _migrate_seed_email_account()
