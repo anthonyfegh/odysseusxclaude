@@ -347,6 +347,26 @@ def setup_chat_routes(
                 do_research = True
                 logger.info(f"Session {session} in research_pending — auto-triggering research")
 
+        # No agent bound, but the user is in AGENT mode (tools needed) and this is
+        # neither a research nor an incognito turn → run it on the claude_code engine
+        # AS the default assistant. The sidecar's __ODY_TOOL__ tool loop is unreliable
+        # for plain chats (the model fumbles between native function-calls and the
+        # sentinel → "no such tool available"), whereas the engine exposes Odysseus
+        # tools as real, eager MCP tools. The chat stays unbound — it just borrows the
+        # assistant's persona/tools/workspace for this turn, with its OWN per-chat
+        # claude session. Plain chat-mode (no tools), research, and incognito are left
+        # on their existing paths; the claude_code kill-switch off also reverts this.
+        if _crew is None and chat_mode == "agent" and not do_research and not incognito:
+            try:
+                _fb = crew_service.resolve_default_assistant_crew(get_current_user(request))
+                if _fb is not None and crew_service.agent_uses_claude_code(_fb):
+                    _crew = _fb
+                    from src.agent_workspace import workspace_root as _agent_workspace_root
+                    _workspace_root = _agent_workspace_root(_crew.id)
+                    logger.info(f"[agent-binding] unbound agent-mode chat {session} → claude_code as default assistant")
+            except Exception as _e:
+                logger.warning(f"[agent-binding] default-assistant fallback failed: {_e}")
+
         # Persist session mode (research > agent > chat)
         _effective_mode = 'research' if do_research else (chat_mode or 'chat')
         if _effective_mode in ('agent', 'research', 'chat'):

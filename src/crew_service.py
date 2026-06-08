@@ -190,6 +190,27 @@ def default_assistant_id(db, owner: Optional[str]) -> Optional[str]:
     return crew.id if crew else None
 
 
+def resolve_default_assistant_crew(owner: Optional[str]) -> Optional[CrewMember]:
+    """Detached default-assistant CrewMember for `owner`, or None. Lets a no-agent
+    chat run on the claude_code engine AS the assistant (reliable native tools)
+    instead of the sidecar's __ODY_TOOL__ loop. Returns a detached object whose
+    loaded columns stay usable after the session closes (mirrors resolve_session_crew)."""
+    if not owner:
+        return None
+    db = SessionLocal()
+    try:
+        crew = (db.query(CrewMember)
+                .filter(CrewMember.owner == owner,
+                        CrewMember.is_default_assistant == True)  # noqa: E712
+                .first())
+        if not crew:
+            return None
+        db.expunge(crew)
+        return crew
+    finally:
+        db.close()
+
+
 def agent_uses_claude_code(crew) -> bool:
     """THE single routing rule: an agent-bound LLM turn (chat / LLM task /
     check-in) runs on the claude_code engine; anything without a crew runs on
