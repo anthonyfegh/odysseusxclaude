@@ -319,9 +319,18 @@ async def stream_claude_code_session(
     _lock = _get_agent_lock(crew_id) if crew_id else None
     if _lock is not None:
         await _lock.acquire()
+    # C6: flip claude's tool-search mode from the default "tst" (the agent's MCP
+    # tools are deferred behind a per-turn ToolSearch detour — a wasted ~3-6s
+    # inference round before the first mcp__odysseus__* call) to "standard", so
+    # all of the odysseus server's tools load eagerly into the first inference
+    # and the model calls them directly. The lever is the env var ENABLE_TOOL_SEARCH;
+    # it must be a *falsy* string ("0") — counter-intuitively "true"/"1" KEEPS the
+    # detour on. (Decoded from claude v2.1.168's mode resolver sb8() + verified by
+    # running the real CLI against a 30-tool MCP server: "0" -> 0 ToolSearch calls.)
+    _env = {**os.environ, "ENABLE_TOOL_SEARCH": "0"}
     try:
         proc = await asyncio.create_subprocess_exec(
-            *argv, cwd=workspace_root,
+            *argv, cwd=workspace_root, env=_env,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
