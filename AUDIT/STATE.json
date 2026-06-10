@@ -1,7 +1,7 @@
 {
  "phase": 4,
  "phase_name": "COMPLETE",
- "updated": "2026-06-10T19:50:00",
+ "updated": "2026-06-10T20:05:00",
  "repo": "/Users/clawdio/odysseus",
  "repo_head_main": "1b753f5",
  "branch": "audit/endpoint-fixes",
@@ -30,9 +30,10 @@
   "running": true,
   "url": "http://127.0.0.1:8750/v1",
   "log": "AUDIT/logs/sidecar.log",
-  "bg_task": "byy7avc73",
+  "bg_task": "bdtn539hx",
   "endpoint_id": "claude-cli-sidecar",
-  "running_fixed_code": true
+  "running_fixed_code": true,
+  "note": "restarted 20:03 after graceful shutdown post-audit (harness background-task reaping); health + models + default-chat reverified"
  },
  "chromadb": {
   "running": true,
