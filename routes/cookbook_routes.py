@@ -1161,7 +1161,7 @@ def setup_cookbook_routes() -> APIRouter:
                 "pip install -q filelock fsspec packaging pyyaml tqdm typer httpx requests 2>/dev/null; "
                 "python3 -c 'from huggingface_hub import snapshot_download; print(\"OK\")'"
             )
-            cmd = f"ssh {pf}{host} '{setup_script}'"
+            cmd = f"ssh {pf}{host} {shlex.quote(setup_script)}"
         else:
             # Linux: auto-install tmux (via whichever package manager is available)
             # and huggingface_hub + hf_transfer (falling back to --user/--break-system-packages
@@ -1183,7 +1183,7 @@ def setup_cookbook_routes() -> APIRouter:
                 "pip3 install --user --break-system-packages -q huggingface_hub hf_transfer 2>/dev/null; "
                 "python3 -c 'from huggingface_hub import snapshot_download; print(\"OK\")'"
             )
-            cmd = f"ssh {pf}{host} '{setup_script}'"
+            cmd = f"ssh {pf}{host} {shlex.quote(setup_script)}"
 
         try:
             proc = await asyncio.create_subprocess_shell(
@@ -1191,7 +1191,11 @@ def setup_cookbook_routes() -> APIRouter:
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
             output = stdout.decode() + stderr.decode()
-            ok = "OK" in output
+            # Require a clean exit AND the success marker. The marker alone is
+            # unreliable: a failure that echoes the command back (e.g. a shell
+            # syntax error printing the `print("OK")` literal) used to match and
+            # falsely report ok:true.
+            ok = proc.returncode == 0 and "OK" in output
             return {"ok": ok, "output": output.strip(), "platform": platform}
         except asyncio.TimeoutError:
             return {"ok": False, "error": "Setup timed out (120s)", "platform": platform}
