@@ -1437,7 +1437,7 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
     @router.post("/{skill_id}/markdown")
     async def save_skill_markdown(request: Request, skill_id: str):
         """Replace SKILL.md with new raw content. Parses + validates first."""
-        from services.memory.skill_format import Skill, slugify
+        from services.memory.skill_format import Skill, slugify, parse_frontmatter
         user = _owner(request)
         body = await request.json()
         new_content = body.get("markdown")
@@ -1448,6 +1448,13 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         if not match:
             raise HTTPException(404, "Skill not found")
         _verify_owner(match, user)
+        # parse_frontmatter returns ({}, text) for content without a valid YAML
+        # frontmatter block instead of raising — so from_markdown would silently
+        # slug an empty name to the fallback "skill" and RENAME the target skill.
+        # Require real frontmatter with a name before accepting the edit.
+        _fm, _ = parse_frontmatter(new_content)
+        if not _fm or not str(_fm.get("name") or "").strip():
+            raise HTTPException(400, "Could not parse SKILL.md: missing YAML frontmatter with a 'name' field")
         try:
             sk = Skill.from_markdown(new_content)
         except Exception as e:
