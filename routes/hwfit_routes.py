@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 
 def setup_hwfit_routes():
@@ -148,7 +148,10 @@ def setup_hwfit_routes():
             system["active_group"] = {**g, "use_count": n}
 
         if gpu_count != "":
-            n = int(gpu_count)
+            try:
+                n = int(gpu_count)
+            except (ValueError, TypeError):
+                raise HTTPException(400, "gpu_count must be an integer")
             if n == 0:
                 # RAM-only mode: rank against system memory, offload allowed.
                 system["has_gpu"] = False

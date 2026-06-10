@@ -2829,7 +2829,10 @@ def setup_email_routes():
                     if col_name.endswith("_port") and val in (None, ""):
                         continue
                     if col_name.endswith("_port"):
-                        val = int(val)
+                        try:
+                            val = int(val)
+                        except (ValueError, TypeError):
+                            raise HTTPException(400, f"{in_key} must be an integer port number")
                     setattr(row, col_name, val)
             # Passwords: only update when a non-empty value is given.
             # Stored encrypted; see src/secret_storage.py.
