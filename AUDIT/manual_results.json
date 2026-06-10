@@ -1,0 +1,276 @@
+{
+ "results": [
+  {
+   "method": "GET",
+   "path": "/health",
+   "status": "PASS",
+   "evidence": "curl 127.0.0.1:8750/health -> {\"ok\":true}",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "GET",
+   "path": "/v1/models",
+   "status": "PASS",
+   "evidence": "200 list of 3 claude models",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/v1/chat/completions",
+   "status": "PASS",
+   "evidence": "non-streaming 'say ok'->'ok' (after fix 9b8061c); streaming SSE chunks+[DONE]; tools sentinel->native delta.tool_calls finish_reason=tool_calls. WAS: 500 AttributeError 'list' object has no attribute 'get' (sidecar.py:552) with newer claude CLI JSON-array output. UPSTREAM BUG fixed on audit branch.",
+   "reason": null,
+   "diagnosis": "claude CLI v2.1.x emits JSON array for --output-format json; sidecar assumed bare result dict"
+  },
+  {
+   "method": "POST",
+   "path": "/api/chat",
+   "status": "PASS",
+   "evidence": "{'message':'Say the word pong...','session':sid} -> {\"response\":\"pong\"}",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/chat_stream",
+   "status": "PASS",
+   "evidence": "multipart message/session/mode=chat -> SSE model_info, deltas 'p'/'ong', metrics, message_saved, [DONE]",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/rewrite",
+   "status": "PASS",
+   "evidence": "{'session_id','original_text':'pong','instruction':'make it ping'} -> SSE delta 'ping' + [DONE]",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/session/{session_id}/compact",
+   "status": "PASS",
+   "evidence": "6-message session -> {\"ok\":true,\"summarized\":2,\"kept\":4,\"message_count\":5}",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/tasks/parse",
+   "status": "PASS",
+   "evidence": "'every weekday at 7am say hi' -> draft with cron 0 7 * * 1-5, task_type llm",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/calendar/quick-parse",
+   "status": "PASS",
+   "evidence": "'lunch with sara friday 1pm' tz Europe/Paris -> event 2026-06-12T13:00 confidence .99",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/presets/expand",
+   "status": "PASS",
+   "evidence": "name Merlin -> {'success':true,'prompt':<persona>}",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/chat",
+   "status": "PASS",
+   "evidence": "Bearer ody_ token, {'message':'Say OK'} -> {'response':'OK','session_id',...,'model':'claude-opus-4-8'}. NOTE: model 'auto' resolves to FIRST advertised model of first enabled endpoint (code-intended); recommendation: prefer configured default_model",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/probe-selected",
+   "status": "PASS",
+   "evidence": "haiku with_tools=false -> status ok latency 7962ms (squeaked under old 8s limit; new default 30s)",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/model-endpoints/{ep_id}/probe",
+   "status": "FAIL",
+   "evidence": "all 3 models 'Timed out (8s)' AND persisted hidden_models=[all 3] hiding endpoint from pickers; restored via PATCH .../models {'hidden':[]}; fixed in 1d7f660 (ODYSSEUS_PROBE_TIMEOUT, default 30s). RETEST after app restart",
+   "reason": null,
+   "diagnosis": "hardcoded timeout=8 too tight for CLI-spawn sidecar (~8-10s); probe persists failures to hidden_models"
+  },
+  {
+   "method": "POST",
+   "path": "/api/memory/extract",
+   "status": "PASS",
+   "evidence": "form session=sid -> {'suggestions':[]} (trivial session content; valid shape)",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/memory/import",
+   "status": "PASS",
+   "evidence": "multipart export.json fast path -> suggestions roundtrip, no LLM",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/memory/audit",
+   "status": "PASS",
+   "evidence": "form session=sid -> {'ok':true,'before':0,'after':0,'removed':0,...}",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/email/summarize",
+   "status": "PASS",
+   "evidence": "body-only (no uid) -> {'success':true,'summary':'- Invoice #42...','model_used':'claude-sonnet-4-6'}",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/email/ai-reply",
+   "status": "BLOCKED",
+   "evidence": "{'uid':'1','folder':'INBOX'} -> 200 {'success':false,'error':'No email body provided'} clean",
+   "reason": "no-creds-graceful",
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/email/extract-style",
+   "status": "BLOCKED",
+   "evidence": "{} -> 200 {'success':false,'error':'[Errno 61] Connection refused'} \u2014 graceful but message is raw OS error; polish: should say 'no email account configured'",
+   "reason": "no-creds-graceful",
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/agents/builder/{builder_id}/message",
+   "status": "PASS",
+   "evidence": "builder/start -> id; message 'agent named Scribe' -> reply + draft{name Scribe, personality...}",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/test-research",
+   "status": "PASS",
+   "evidence": "form query -> 200 {'status':'error','error':'Cannot reach model gpt-oss-120b...'} quickly \u2014 documented expected shape without local LLM host",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/research/start",
+   "status": "PASS",
+   "evidence": "{'query':...,'max_rounds':1,'max_time':60} -> {'session_id':'rp-4b5eba533a72','status':'running'}",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/research/stream/{session_id}",
+   "status": "PASS",
+   "evidence": "SSE phases planning->searching(4 queries)->reading(13 sources)",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/upload/{file_id}/vision",
+   "status": "PASS",
+   "evidence": "tiny png upload (files= field) -> vision: 200 {'text':'[No vision model configured \u2014 set one in Settings \u2192 Vision]','cached':false} = documented degraded path (quirk d)",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/gallery/{image_id}/ai-tag",
+   "status": "BLOCKED",
+   "evidence": "gallery upload (file= field) -> ai-tag: 200 {'error':'No vision model configured \u2014 set one in Settings \u2192 Vision'} clean",
+   "reason": "no-vision-graceful",
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/skills/{skill_id}/test",
+   "status": "PASS",
+   "evidence": "created audit-tmp-skill; test {'task':'Say ok'} -> running; test-status -> done, verdict pass confidence .99",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/skills/audit-all",
+   "status": "PASS",
+   "evidence": "{'names':['audit-tmp-skill']} -> running; audit-all/status -> done, necessity judge skipped trivial skill (intended pipeline)",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/embeddings/models/{model_name:path}/download",
+   "status": "PASS",
+   "evidence": "BAAI/bge-small-en-v1.5 -> {'status':'downloaded'}; status -> downloaded:true",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/cookbook/packages/install",
+   "status": "PASS",
+   "evidence": "{'pip':'hf_transfer'} -> {'ok':true,'output':...pip install log...}",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/image/denoise",
+   "status": "BLOCKED",
+   "evidence": "200 {'error':'realesrgan not installed. Install it from Cookbook \u2192 Dependencies...'} clean",
+   "reason": "optional-dep-graceful",
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/image/remove-bg",
+   "status": "BLOCKED",
+   "evidence": "200 {'error':'No background removal model available. Install rembg: pip install rembg'} clean; may install rembg in later round",
+   "reason": "optional-dep-graceful",
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/image/upscale-local",
+   "status": "BLOCKED",
+   "evidence": "200 {'error':'realesrgan not installed...'} clean",
+   "reason": "optional-dep-graceful",
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/tasks/{task_id}/run",
+   "status": "PASS",
+   "evidence": "action run_local 'echo audit-ok' task -> {'ok':true,'message':'Task triggered'}; /runs shows status success result 'audit-ok'",
+   "reason": null,
+   "diagnosis": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/tasks/{task_id}/webhook/{token}",
+   "status": "PASS",
+   "evidence": "logged-in localhost -> {'ok':true,'message':'Task triggered via webhook'}; WITHOUT cookie -> 401 {'error':'Not authenticated'} = documented quirk (a): auth middleware intercepts external callers; limitation documented",
+   "reason": null,
+   "diagnosis": null
+  }
+ ]
+}

@@ -1,0 +1,10 @@
+{
+ "results": [
+  {
+   "method": "POST",
+   "path": "/api/cookbook/state",
+   "status": "PASS",
+   "evidence": "Pass-3 finding fixed in 331aa09: with encrypted hfToken on disk, env-less POST {'tasks':[]} now -> 200 {'ok':true,'preserved':0} and write persists (was {'ok':false,'error':'400: Invalid token characters'} + silent drop). Round-trip GET verified; enc: token preserved on disk. Happy path + merge/anti-wipe guards verified by fleet."
+  }
+ ]
+}

@@ -143,6 +143,44 @@ def setup_chat_routes(
         if memory_response:
             return {"response": memory_response}
 
+        # ── Agent-bound sessions run on the claude_code engine ──────────
+        # Mirrors chat_stream's dispatch. Without this, an agent chat has no
+        # endpoint_url and the legacy llm_call_async below fails with a baffling
+        # 502 "Request URL is missing an 'http://' or 'https://' protocol."
+        _crew = None
+        try:
+            from src.settings import get_setting as _get_setting
+            if _get_setting("crew_chat_binding_enabled", True):
+                _crew = crew_service.resolve_session_crew(session, get_current_user(request))
+        except Exception:
+            _crew = None
+        if _crew is not None and crew_service.agent_uses_claude_code(_crew):
+            from src.claude_code_engine import stream_claude_code_session
+            from src.agent_workspace import workspace_root as _agent_workspace_root
+            sess.add_message(ChatMessage("user", message))
+            _parts: list = []
+            async for _chunk in stream_claude_code_session(
+                crew=_crew, chat_session_id=session, message=message,
+                owner=get_current_user(request),
+                workspace_root=_agent_workspace_root(_crew.id),
+            ):
+                if not _chunk.startswith("data: "):
+                    continue
+                try:
+                    _d = json.loads(_chunk[6:])
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                if "delta" in _d and not _d.get("thinking"):
+                    _parts.append(_d["delta"])
+            reply = "".join(_parts).strip()
+            if not reply:
+                raise HTTPException(502, "Agent returned no response")
+            sess.add_message(ChatMessage("assistant", reply))
+            from core.database import update_session_last_accessed
+            update_session_last_accessed(session)
+            session_manager.save_sessions()
+            return {"response": reply}
+
         # Build shared context (preset, preprocess, preface, compact)
         ctx = await build_chat_context(
             sess, request, chat_handler, chat_processor,

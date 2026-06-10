@@ -116,7 +116,12 @@ def setup_preset_routes(preset_manager) -> APIRouter:
     @router.post("/api/presets/groups")
     async def save_group_presets(request: Request, _admin: None = Depends(require_admin)):
         """Save group chat presets."""
-        data = await request.json()
+        try:
+            data = await request.json()
+        except Exception:
+            raise HTTPException(400, "Invalid JSON body")
+        if not isinstance(data, dict):
+            raise HTTPException(400, "Expected a JSON object")
         preset_manager.save_group_presets(data.get("groups", []))
         return {"ok": True}
 
