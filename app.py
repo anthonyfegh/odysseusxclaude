@@ -222,6 +222,11 @@ if AUTH_ENABLED:
             # tool layer when it HTTP-loopbacks to admin-gated routes
             # (no admin cookie available in that context). Restricted to
             # loopback clients + matching token to keep it locked down.
+            # Decide whether the internal-tool bypass applies. Keep ONLY the
+            # token-validation / impersonation setup inside the guard — a downstream
+            # handler error must NOT be swallowed here (that masked real 4xx/5xx as a
+            # 302 login redirect, e.g. GET /backgrounds when its HTML is absent).
+            _internal_tool_ok = False
             try:
                 from core.middleware import INTERNAL_TOOL_HEADER, INTERNAL_TOOL_TOKEN as _ITT
                 _hdr = request.headers.get(INTERNAL_TOOL_HEADER)
@@ -237,9 +242,11 @@ if AUTH_ENABLED:
                     else:
                         request.state.current_user = "internal-tool"
                     request.state.api_token = False
-                    return await call_next(request)
+                    _internal_tool_ok = True
             except Exception:
                 pass
+            if _internal_tool_ok:
+                return await call_next(request)
             # Allow DIRECT localhost requests (internal service calls from
             # heartbeats etc.). Tunnel/proxy-forwarded requests are excluded by
             # _is_trusted_loopback so LOCALHOST_BYPASS can't be abused over a
@@ -732,7 +739,12 @@ async def serve_library(request: Request):
 @app.get("/backgrounds")
 async def serve_backgrounds(request: Request):
     """Sandbox page for prototyping background effects. No auth required."""
-    return _serve_html_with_nonce(request, abs_join(BASE_DIR, "static/backgrounds.html"))
+    bg_path = abs_join(BASE_DIR, "static/backgrounds.html")
+    if not os.path.exists(bg_path):
+        # Optional dev/prototype page; not shipped in every build. 404 cleanly
+        # instead of letting open() raise FileNotFoundError -> HTTP 500.
+        raise HTTPException(404, "backgrounds.html not found")
+    return _serve_html_with_nonce(request, bg_path)
 
 @app.get("/login")
 async def serve_login(request: Request):
