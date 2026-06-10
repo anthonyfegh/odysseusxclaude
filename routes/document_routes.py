@@ -1278,6 +1278,14 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             _to_unlink.append(out_path)
             try:
                 fill_fields(pdf_path, out_path, values)
+            except RuntimeError as e:
+                # Optional PyMuPDF missing -> 503, matching the PDF viewer routes'
+                # graceful degradation (not a 500 like a real render failure).
+                _cleanup_temps()
+                if "PyMuPDF" in str(e):
+                    raise HTTPException(503, str(e)) from e
+                logger.error(f"render_pdf fill_fields failed for {doc_id}: {e}")
+                raise HTTPException(500, f"PDF render failed: {e}")
             except Exception as e:
                 logger.error(f"render_pdf fill_fields failed for {doc_id}: {e}")
                 _cleanup_temps()
@@ -1402,6 +1410,14 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             _to_unlink.append(filled_path)
             try:
                 fill_fields(pdf_path, filled_path, text_values)
+            except RuntimeError as e:
+                # Optional PyMuPDF missing -> 503, matching the PDF viewer routes'
+                # graceful degradation (not a 500 like a real fill failure).
+                _cleanup_temps()
+                if "PyMuPDF" in str(e):
+                    raise HTTPException(503, str(e)) from e
+                logger.error(f"fill_fields failed for doc {doc_id}: {e}")
+                raise HTTPException(500, f"PDF fill failed: {e}")
             except Exception as e:
                 logger.error(f"fill_fields failed for doc {doc_id}: {e}")
                 _cleanup_temps()
