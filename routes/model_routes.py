@@ -1,5 +1,6 @@
 # routes/model_routes.py
 """Routes for model and provider management."""
+import os
 import re
 import uuid
 import json
@@ -212,6 +213,12 @@ def _is_chat_model(model_id: str) -> bool:
         if substr in mid:
             return False
     return True
+
+
+# Per-model probe timeout. CLI-spawn endpoints (e.g. the claude sidecar) have
+# ~8-10s cold-start latency, so the old hardcoded 8s marked every model as
+# failed and persisted them all into hidden_models. Overridable per install.
+PROBE_MODEL_TIMEOUT = int(os.getenv("ODYSSEUS_PROBE_TIMEOUT", "30"))
 
 
 def _probe_single_model(base: str, api_key: str, model_id: str, timeout: int = 10, with_tools: bool = False) -> dict:
@@ -784,7 +791,7 @@ def setup_model_routes(model_discovery):
 
                 base = _normalize_base(ep_data["base_url"])
                 _with_tools = item.get("with_tools", False)
-                result = _probe_single_model(base, ep_data.get("api_key"), model_id, timeout=8, with_tools=_with_tools)
+                result = _probe_single_model(base, ep_data.get("api_key"), model_id, timeout=PROBE_MODEL_TIMEOUT, with_tools=_with_tools)
                 result["model"] = model_id
                 result["endpoint_id"] = ep_id
                 results.append(result)
@@ -846,7 +853,7 @@ def setup_model_routes(model_discovery):
 
                 for model_id in models:
                     total += 1
-                    result = _probe_single_model(base, ep.get("api_key"), model_id, timeout=8)
+                    result = _probe_single_model(base, ep.get("api_key"), model_id, timeout=PROBE_MODEL_TIMEOUT)
                     result["type"] = "probe_result"
                     result["endpoint"] = ep["name"]
                     result["model"] = model_id
@@ -1098,7 +1105,7 @@ def setup_model_routes(model_discovery):
             failed = []
             ok_count = 0
             for mid in chat_models:
-                result = _probe_single_model(base, ep_data["api_key"], mid, timeout=8)
+                result = _probe_single_model(base, ep_data["api_key"], mid, timeout=PROBE_MODEL_TIMEOUT)
                 result["model"] = mid
                 result["type"] = "probe_result"
                 result["endpoint"] = ep_data["name"]
