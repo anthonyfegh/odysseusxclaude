@@ -435,17 +435,24 @@ def setup_mcp_routes(mcp_manager: McpManager):
 
             redirect_uri = "http://localhost:7000/api/mcp/oauth/callback"
 
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    "https://oauth2.googleapis.com/token",
-                    data={
-                        "code": code,
-                        "client_id": client_id,
-                        "client_secret": client_secret,
-                        "redirect_uri": redirect_uri,
-                        "grant_type": "authorization_code",
-                    },
-                )
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.post(
+                        "https://oauth2.googleapis.com/token",
+                        data={
+                            "code": code,
+                            "client_id": client_id,
+                            "client_secret": client_secret,
+                            "redirect_uri": redirect_uri,
+                            "grant_type": "authorization_code",
+                        },
+                    )
+            except httpx.RequestError as e:
+                logger.error(f"OAuth token exchange network error: {e!r}")
+                return HTMLResponse(_oauth_result_page(
+                    "Authorization Failed",
+                    "Could not reach Google to exchange the authorization code. Please check your network connection and try again.",
+                ), status_code=400)
 
             if resp.status_code != 200:
                 err = resp.text
