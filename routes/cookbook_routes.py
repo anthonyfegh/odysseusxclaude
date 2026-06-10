@@ -204,7 +204,13 @@ def setup_cookbook_routes() -> APIRouter:
         disk_env = on_disk.get("env") if isinstance(on_disk, dict) and isinstance(on_disk.get("env"), dict) else {}
         if isinstance(env, dict):
             incoming = env.get("hfToken")
-            if incoming:
+            if incoming and isinstance(incoming, str) and incoming.startswith("enc:"):
+                # Already-encrypted token re-injected by the anti-wipe guard
+                # (env-less POST copies the on-disk env back in). Validating it
+                # as a fresh token rejects the ciphertext (':'/base64 chars) and
+                # silently drops the whole state write — keep it as-is instead.
+                pass
+            elif incoming:
                 _validate_token(incoming)
                 env["hfToken"] = _encrypt_secret(incoming)
             elif disk_env.get("hfToken"):
