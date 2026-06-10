@@ -2923,6 +2923,11 @@ def setup_email_routes():
         name = (data.get("name") or "").strip()
         if not name:
             return {"ok": False, "error": "name required"}
+        try:
+            _imap_port = int(data.get("imap_port") or 993)
+            _smtp_port = int(data.get("smtp_port") or 465)
+        except (ValueError, TypeError):
+            raise HTTPException(400, "imap_port and smtp_port must be integers")
         db = SessionLocal()
         try:
             row = EmailAccount(
@@ -2931,12 +2936,12 @@ def setup_email_routes():
                 is_default=bool(data.get("is_default", False)),
                 enabled=bool(data.get("enabled", True)),
                 imap_host=(data.get("imap_host") or "").strip(),
-                imap_port=int(data.get("imap_port") or 993),
+                imap_port=_imap_port,
                 imap_user=(data.get("imap_user") or "").strip(),
                 imap_password=_enc(data.get("imap_password") or ""),
                 imap_starttls=bool(data.get("imap_starttls", True)),
                 smtp_host=(data.get("smtp_host") or "").strip(),
-                smtp_port=int(data.get("smtp_port") or 465),
+                smtp_port=_smtp_port,
                 smtp_user=(data.get("smtp_user") or "").strip(),
                 smtp_password=_enc(data.get("smtp_password") or ""),
                 from_address=(data.get("from_address") or "").strip(),
@@ -2979,7 +2984,10 @@ def setup_email_routes():
                     setattr(row, key, (data[key] or "").strip())
             for key in ("imap_port", "smtp_port"):
                 if data.get(key) not in (None, ""):
-                    setattr(row, key, int(data[key]))
+                    try:
+                        setattr(row, key, int(data[key]))
+                    except (ValueError, TypeError):
+                        raise HTTPException(400, f"{key} must be an integer")
             for key in ("imap_starttls", "enabled"):
                 if key in data:
                     setattr(row, key, bool(data[key]))
@@ -3080,7 +3088,10 @@ def setup_email_routes():
         smtp_result = None
 
         imap_host = (body.get("imap_host") or "").strip()
-        imap_port = int(body.get("imap_port") or 993)
+        try:
+            imap_port = int(body.get("imap_port") or 993)
+        except (ValueError, TypeError):
+            raise HTTPException(400, "imap_port must be an integer")
         imap_user = (body.get("imap_user") or "").strip()
         imap_pass = body.get("imap_password") or ""
         imap_starttls = bool(body.get("imap_starttls"))
@@ -3114,7 +3125,10 @@ def setup_email_routes():
 
         smtp_host = (body.get("smtp_host") or "").strip()
         if smtp_host:
-            smtp_port = int(body.get("smtp_port") or 465)
+            try:
+                smtp_port = int(body.get("smtp_port") or 465)
+            except (ValueError, TypeError):
+                raise HTTPException(400, "smtp_port must be an integer")
             smtp_user = (body.get("smtp_user") or imap_user).strip()
             smtp_pass = body.get("smtp_password") or imap_pass
             try:
