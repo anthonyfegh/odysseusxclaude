@@ -547,6 +547,12 @@ async def _handle_nonstreaming(cid: str, model: str, argv: List[str], prompt: st
         data = json.loads(text)
     except Exception:
         data = None
+    # Newer claude CLIs emit a JSON array of events for --output-format json;
+    # the summary is the item with type == "result". Older CLIs emit it bare.
+    if isinstance(data, list):
+        data = next((x for x in data if isinstance(x, dict) and x.get("type") == "result"), None)
+    elif not isinstance(data, dict):
+        data = None
 
     # Success requires parseable JSON, no error flag, and a non-empty result.
     if not data or data.get("is_error") or not data.get("result"):
