@@ -1,0 +1,3517 @@
+{
+ "count": 439,
+ "routes": [
+  {
+   "path": "/",
+   "methods": [
+    "GET"
+   ],
+   "name": "serve_index",
+   "kind": "api"
+  },
+  {
+   "path": "/api/admin/wipe/{kind}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "wipe",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_agents",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_agent",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents/builder/start",
+   "methods": [
+    "POST"
+   ],
+   "name": "builder_start",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents/builder/{builder_id}/commit",
+   "methods": [
+    "POST"
+   ],
+   "name": "builder_commit",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents/builder/{builder_id}/message",
+   "methods": [
+    "POST"
+   ],
+   "name": "builder_message",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents/{agent_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_agent",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents/{agent_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_agent",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents/{agent_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_agent",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents/{agent_id}/activity",
+   "methods": [
+    "GET"
+   ],
+   "name": "agent_activity",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents/{agent_id}/documents",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_documents",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents/{agent_id}/duplicate",
+   "methods": [
+    "POST"
+   ],
+   "name": "duplicate_agent",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents/{agent_id}/files",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_files",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents/{agent_id}/files/read",
+   "methods": [
+    "GET"
+   ],
+   "name": "read_file",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents/{agent_id}/images",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_images",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents/{agent_id}/research",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_research",
+   "kind": "api"
+  },
+  {
+   "path": "/api/agents/{agent_id}/reset_session",
+   "methods": [
+    "POST"
+   ],
+   "name": "reset_agent_session",
+   "kind": "api"
+  },
+  {
+   "path": "/api/assistant/available-timezones",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_timezones",
+   "kind": "api"
+  },
+  {
+   "path": "/api/assistant/run-status/{task_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "run_status",
+   "kind": "api"
+  },
+  {
+   "path": "/api/assistant/run/{task_id}",
+   "methods": [
+    "POST"
+   ],
+   "name": "run_check_in_now",
+   "kind": "api"
+  },
+  {
+   "path": "/api/assistant/session",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_assistant_session",
+   "kind": "api"
+  },
+  {
+   "path": "/api/assistant/settings",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_assistant_settings",
+   "kind": "api"
+  },
+  {
+   "path": "/api/assistant/settings",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_assistant_settings",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/2fa/confirm",
+   "methods": [
+    "POST"
+   ],
+   "name": "totp_confirm",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/2fa/disable",
+   "methods": [
+    "POST"
+   ],
+   "name": "totp_disable",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/2fa/setup",
+   "methods": [
+    "POST"
+   ],
+   "name": "totp_setup",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/2fa/status",
+   "methods": [
+    "GET"
+   ],
+   "name": "totp_status",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/change-password",
+   "methods": [
+    "POST"
+   ],
+   "name": "change_password",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/features",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_features",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/features",
+   "methods": [
+    "POST"
+   ],
+   "name": "set_features",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/integrations",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_integrations_route",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/integrations",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_integration",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/integrations/presets",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_presets",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/integrations/{integration_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_integration_route",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/integrations/{integration_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_integration_route",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/integrations/{integration_id}/test",
+   "methods": [
+    "POST"
+   ],
+   "name": "test_integration_route",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/login",
+   "methods": [
+    "POST"
+   ],
+   "name": "login",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/logout",
+   "methods": [
+    "POST"
+   ],
+   "name": "logout",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/settings",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_settings",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/settings",
+   "methods": [
+    "POST"
+   ],
+   "name": "set_settings",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/setup",
+   "methods": [
+    "POST"
+   ],
+   "name": "first_run_setup",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/signup",
+   "methods": [
+    "POST"
+   ],
+   "name": "signup",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/signup-toggle",
+   "methods": [
+    "POST"
+   ],
+   "name": "toggle_signup",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/status",
+   "methods": [
+    "GET"
+   ],
+   "name": "auth_status",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/users",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "admin_delete_user",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/users",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_users",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/users",
+   "methods": [
+    "POST"
+   ],
+   "name": "admin_create_user",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/users/{username}/privileges",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_user_privileges",
+   "kind": "api"
+  },
+  {
+   "path": "/api/auth/users/{username}/rename",
+   "methods": [
+    "PUT"
+   ],
+   "name": "rename_user",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/calendars",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_calendars",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/calendars",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_calendar",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/calendars/{cal_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_calendar",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/calendars/{cal_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_calendar",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/config",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_config",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/config",
+   "methods": [
+    "POST"
+   ],
+   "name": "save_config",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/events",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_events",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/events",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_event",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/events/{uid}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_event",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/events/{uid}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_event",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/export/{cal_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_ics",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/import",
+   "methods": [
+    "POST"
+   ],
+   "name": "import_ics",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/quick-parse",
+   "methods": [
+    "POST"
+   ],
+   "name": "quick_parse",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/subscriptions",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_subscriptions",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/subscriptions",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_subscription",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/subscriptions/{sub_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_subscription",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/sync",
+   "methods": [
+    "POST"
+   ],
+   "name": "sync_caldav_endpoint",
+   "kind": "api"
+  },
+  {
+   "path": "/api/calendar/test",
+   "methods": [
+    "POST"
+   ],
+   "name": "test_connection",
+   "kind": "api"
+  },
+  {
+   "path": "/api/chat",
+   "methods": [
+    "POST"
+   ],
+   "name": "chat_endpoint",
+   "kind": "api"
+  },
+  {
+   "path": "/api/chat/resume/{session_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "chat_resume",
+   "kind": "api"
+  },
+  {
+   "path": "/api/chat/stop/{session_id}",
+   "methods": [
+    "POST"
+   ],
+   "name": "chat_stop",
+   "kind": "api"
+  },
+  {
+   "path": "/api/chat/stream_status/{session_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "chat_stream_status",
+   "kind": "api"
+  },
+  {
+   "path": "/api/chat_stream",
+   "methods": [
+    "POST"
+   ],
+   "name": "chat_stream",
+   "kind": "api"
+  },
+  {
+   "path": "/api/cleanup",
+   "methods": [
+    "POST"
+   ],
+   "name": "cleanup_endpoint",
+   "kind": "api"
+  },
+  {
+   "path": "/api/cleanup/preview",
+   "methods": [
+    "GET"
+   ],
+   "name": "cleanup_preview",
+   "kind": "api"
+  },
+  {
+   "path": "/api/compare/history",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_comparisons",
+   "kind": "api"
+  },
+  {
+   "path": "/api/compare/record",
+   "methods": [
+    "POST"
+   ],
+   "name": "record_comparison",
+   "kind": "api"
+  },
+  {
+   "path": "/api/compare/start",
+   "methods": [
+    "POST"
+   ],
+   "name": "start_comparison",
+   "kind": "api"
+  },
+  {
+   "path": "/api/compare/{comp_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_comparison",
+   "kind": "api"
+  },
+  {
+   "path": "/api/compare/{comp_id}/vote",
+   "methods": [
+    "POST"
+   ],
+   "name": "vote_comparison",
+   "kind": "api"
+  },
+  {
+   "path": "/api/contacts/add",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_contact",
+   "kind": "api"
+  },
+  {
+   "path": "/api/contacts/clear",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "clear_contacts",
+   "kind": "api"
+  },
+  {
+   "path": "/api/contacts/config",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_config",
+   "kind": "api"
+  },
+  {
+   "path": "/api/contacts/config",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_config",
+   "kind": "api"
+  },
+  {
+   "path": "/api/contacts/export",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_contacts",
+   "kind": "api"
+  },
+  {
+   "path": "/api/contacts/import",
+   "methods": [
+    "POST"
+   ],
+   "name": "import_vcf",
+   "kind": "api"
+  },
+  {
+   "path": "/api/contacts/list",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_contacts",
+   "kind": "api"
+  },
+  {
+   "path": "/api/contacts/search",
+   "methods": [
+    "GET"
+   ],
+   "name": "search_contacts",
+   "kind": "api"
+  },
+  {
+   "path": "/api/contacts/{uid}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_contact",
+   "kind": "api"
+  },
+  {
+   "path": "/api/contacts/{uid}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "edit_contact",
+   "kind": "api"
+  },
+  {
+   "path": "/api/conversations/topics",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_conversation_topics",
+   "kind": "api"
+  },
+  {
+   "path": "/api/cookbook/gpus",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_gpus",
+   "kind": "api"
+  },
+  {
+   "path": "/api/cookbook/hf-latest",
+   "methods": [
+    "GET"
+   ],
+   "name": "hf_latest",
+   "kind": "api"
+  },
+  {
+   "path": "/api/cookbook/kill-pid",
+   "methods": [
+    "POST"
+   ],
+   "name": "kill_pid",
+   "kind": "api"
+  },
+  {
+   "path": "/api/cookbook/packages",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_packages",
+   "kind": "api"
+  },
+  {
+   "path": "/api/cookbook/packages/install",
+   "methods": [
+    "POST"
+   ],
+   "name": "install_package",
+   "kind": "api"
+  },
+  {
+   "path": "/api/cookbook/setup",
+   "methods": [
+    "POST"
+   ],
+   "name": "server_setup",
+   "kind": "api"
+  },
+  {
+   "path": "/api/cookbook/ssh-key",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_cookbook_ssh_key",
+   "kind": "api"
+  },
+  {
+   "path": "/api/cookbook/ssh-key",
+   "methods": [
+    "POST"
+   ],
+   "name": "generate_cookbook_ssh_key",
+   "kind": "api"
+  },
+  {
+   "path": "/api/cookbook/state",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_cookbook_state",
+   "kind": "api"
+  },
+  {
+   "path": "/api/cookbook/state",
+   "methods": [
+    "POST"
+   ],
+   "name": "save_cookbook_state",
+   "kind": "api"
+  },
+  {
+   "path": "/api/cookbook/tasks/status",
+   "methods": [
+    "GET"
+   ],
+   "name": "cookbook_tasks_status",
+   "kind": "api"
+  },
+  {
+   "path": "/api/db/stats",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_database_stats",
+   "kind": "api"
+  },
+  {
+   "path": "/api/default-chat",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_default_chat",
+   "kind": "api"
+  },
+  {
+   "path": "/api/discover",
+   "methods": [
+    "GET"
+   ],
+   "name": "discover_local",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_document",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_document",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_document",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "patch_document",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_document",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}/ai-fill-annotations",
+   "methods": [
+    "POST"
+   ],
+   "name": "ai_fill_annotations",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}/archive",
+   "methods": [
+    "POST"
+   ],
+   "name": "archive_document",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}/export-pdf",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_pdf",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}/export-pdf/preview",
+   "methods": [
+    "POST"
+   ],
+   "name": "export_pdf_preview",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}/extract-pdf-text",
+   "methods": [
+    "POST"
+   ],
+   "name": "extract_pdf_text",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}/page/{page_no}.png",
+   "methods": [
+    "GET"
+   ],
+   "name": "render_page_png",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}/prepare-signed-reply",
+   "methods": [
+    "POST"
+   ],
+   "name": "prepare_signed_reply",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}/render-pages",
+   "methods": [
+    "GET"
+   ],
+   "name": "render_pages",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}/render-pdf",
+   "methods": [
+    "GET"
+   ],
+   "name": "render_pdf",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}/restore/{num}",
+   "methods": [
+    "POST"
+   ],
+   "name": "restore_version",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}/version/{num}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_version",
+   "kind": "api"
+  },
+  {
+   "path": "/api/document/{doc_id}/versions",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_versions",
+   "kind": "api"
+  },
+  {
+   "path": "/api/documents/ai-tidy",
+   "methods": [
+    "POST"
+   ],
+   "name": "ai_tidy_documents",
+   "kind": "api"
+  },
+  {
+   "path": "/api/documents/export-zip",
+   "methods": [
+    "POST"
+   ],
+   "name": "documents_export_zip",
+   "kind": "api"
+  },
+  {
+   "path": "/api/documents/import-pdf",
+   "methods": [
+    "POST"
+   ],
+   "name": "import_pdf",
+   "kind": "api"
+  },
+  {
+   "path": "/api/documents/library",
+   "methods": [
+    "GET"
+   ],
+   "name": "documents_library",
+   "kind": "api"
+  },
+  {
+   "path": "/api/documents/tidy",
+   "methods": [
+    "POST"
+   ],
+   "name": "tidy_documents",
+   "kind": "api"
+  },
+  {
+   "path": "/api/documents/{session_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_documents",
+   "kind": "api"
+  },
+  {
+   "path": "/api/editor-drafts",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_drafts",
+   "kind": "api"
+  },
+  {
+   "path": "/api/editor-drafts",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_draft",
+   "kind": "api"
+  },
+  {
+   "path": "/api/editor-drafts/{draft_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_draft",
+   "kind": "api"
+  },
+  {
+   "path": "/api/editor-drafts/{draft_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_draft",
+   "kind": "api"
+  },
+  {
+   "path": "/api/editor-drafts/{draft_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_draft",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/accounts",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_email_accounts",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/accounts",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_email_account",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/accounts/test",
+   "methods": [
+    "POST"
+   ],
+   "name": "test_account_config",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/accounts/{account_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_email_account",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/accounts/{account_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_email_account",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/accounts/{account_id}/set-default",
+   "methods": [
+    "POST"
+   ],
+   "name": "set_default_account",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/ai-reply",
+   "methods": [
+    "POST"
+   ],
+   "name": "ai_reply",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/archive/{uid}",
+   "methods": [
+    "POST"
+   ],
+   "name": "archive_email",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/attachment-as-doc/{uid}/{index}",
+   "methods": [
+    "POST"
+   ],
+   "name": "attachment_as_doc",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/attachment-path/{uid}/{index}",
+   "methods": [
+    "POST"
+   ],
+   "name": "get_attachment_path",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/attachment/{uid}/{index}",
+   "methods": [
+    "GET"
+   ],
+   "name": "download_attachment",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/attachments/{uid}",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_attachments",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/clear-answered/{uid}",
+   "methods": [
+    "POST"
+   ],
+   "name": "clear_answered",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/compose-upload",
+   "methods": [
+    "POST"
+   ],
+   "name": "compose_upload",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/compose-upload/{token}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_compose_upload",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/config",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_email_config",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/config",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_email_config",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/contacts",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_contacts",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/delete-permanent/{uid}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_email_permanent",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/delete/{uid}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_email",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/draft",
+   "methods": [
+    "POST"
+   ],
+   "name": "save_draft",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/extract-style",
+   "methods": [
+    "POST"
+   ],
+   "name": "extract_writing_style",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/folders",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_folders",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/list",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_emails",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/mark-answered/{uid}",
+   "methods": [
+    "POST"
+   ],
+   "name": "mark_answered",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/mark-read/{uid}",
+   "methods": [
+    "POST"
+   ],
+   "name": "mark_read",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/mark-unread/{uid}",
+   "methods": [
+    "POST"
+   ],
+   "name": "mark_unread",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/move/{uid}",
+   "methods": [
+    "POST"
+   ],
+   "name": "move_email",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/odysseus/reminders",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_odysseus_reminder_emails",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/read/{uid}",
+   "methods": [
+    "GET"
+   ],
+   "name": "read_email_by_uid",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/resolve-contact",
+   "methods": [
+    "GET"
+   ],
+   "name": "resolve_contact",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/schedule",
+   "methods": [
+    "POST"
+   ],
+   "name": "schedule_email",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/scheduled",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_scheduled",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/scheduled/{sid}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "cancel_scheduled",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/search",
+   "methods": [
+    "GET"
+   ],
+   "name": "search_emails",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/send",
+   "methods": [
+    "POST"
+   ],
+   "name": "send_email",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/style",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_writing_style",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/style",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_writing_style",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/summarize",
+   "methods": [
+    "POST"
+   ],
+   "name": "summarize_email",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/urgency-state",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_email_urgency_state",
+   "kind": "api"
+  },
+  {
+   "path": "/api/email/{uid}/unflag-spam",
+   "methods": [
+    "POST"
+   ],
+   "name": "unflag_spam",
+   "kind": "api"
+  },
+  {
+   "path": "/api/embeddings/endpoint",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "clear_endpoint",
+   "kind": "api"
+  },
+  {
+   "path": "/api/embeddings/endpoint",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_endpoint",
+   "kind": "api"
+  },
+  {
+   "path": "/api/embeddings/endpoint",
+   "methods": [
+    "POST"
+   ],
+   "name": "set_endpoint",
+   "kind": "api"
+  },
+  {
+   "path": "/api/embeddings/models",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_models",
+   "kind": "api"
+  },
+  {
+   "path": "/api/embeddings/models/{model_name:path}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_model",
+   "kind": "api"
+  },
+  {
+   "path": "/api/embeddings/models/{model_name:path}/download",
+   "methods": [
+    "POST"
+   ],
+   "name": "download_model",
+   "kind": "api"
+  },
+  {
+   "path": "/api/embeddings/models/{model_name:path}/status",
+   "methods": [
+    "GET"
+   ],
+   "name": "download_status",
+   "kind": "api"
+  },
+  {
+   "path": "/api/emoji/{code}.svg",
+   "methods": [
+    "GET"
+   ],
+   "name": "emoji_svg",
+   "kind": "api"
+  },
+  {
+   "path": "/api/export",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_data",
+   "kind": "api"
+  },
+  {
+   "path": "/api/fonts/custom",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_custom_fonts",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/ai-tag-batch",
+   "methods": [
+    "POST"
+   ],
+   "name": "ai_tag_batch",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/ai-upscale",
+   "methods": [
+    "POST"
+   ],
+   "name": "gallery_ai_upscale",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/albums",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_albums",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/albums",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_album",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/albums/{album_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_album",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/albums/{album_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_album",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/albums/{album_id}/add",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_to_album",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/albums/{album_id}/remove",
+   "methods": [
+    "POST"
+   ],
+   "name": "remove_from_album",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/clear-ai-tags",
+   "methods": [
+    "POST"
+   ],
+   "name": "clear_gallery_ai_tags",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/clear-user-tags",
+   "methods": [
+    "POST"
+   ],
+   "name": "clear_gallery_user_tags",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/dedupe-tags",
+   "methods": [
+    "POST"
+   ],
+   "name": "dedupe_gallery_tags",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/download-zip",
+   "methods": [
+    "POST"
+   ],
+   "name": "gallery_download_zip",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/library",
+   "methods": [
+    "GET"
+   ],
+   "name": "gallery_library",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/stats",
+   "methods": [
+    "GET"
+   ],
+   "name": "gallery_stats",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/style-transfer",
+   "methods": [
+    "POST"
+   ],
+   "name": "gallery_style_transfer",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/tags",
+   "methods": [
+    "GET"
+   ],
+   "name": "gallery_tags",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/upload",
+   "methods": [
+    "POST"
+   ],
+   "name": "gallery_upload",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/{image_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_gallery_image",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/{image_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_gallery_image",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/{image_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "patch_gallery_image",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/{image_id}/ai-tag",
+   "methods": [
+    "POST"
+   ],
+   "name": "ai_tag_image",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/{image_id}/favorite",
+   "methods": [
+    "POST"
+   ],
+   "name": "toggle_favorite",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/{image_id}/rename",
+   "methods": [
+    "POST"
+   ],
+   "name": "gallery_rename",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/{image_id}/replace",
+   "methods": [
+    "POST"
+   ],
+   "name": "gallery_replace",
+   "kind": "api"
+  },
+  {
+   "path": "/api/gallery/{image_id}/rotate",
+   "methods": [
+    "POST"
+   ],
+   "name": "gallery_rotate",
+   "kind": "api"
+  },
+  {
+   "path": "/api/generated-image/{filename}",
+   "methods": [
+    "GET"
+   ],
+   "name": "serve_generated_image",
+   "kind": "api"
+  },
+  {
+   "path": "/api/health",
+   "methods": [
+    "GET"
+   ],
+   "name": "health_check",
+   "kind": "api"
+  },
+  {
+   "path": "/api/history/{session_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_session_history",
+   "kind": "api"
+  },
+  {
+   "path": "/api/history/{sid}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_history",
+   "kind": "api"
+  },
+  {
+   "path": "/api/hwfit/image-models",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_image_models",
+   "kind": "api"
+  },
+  {
+   "path": "/api/hwfit/models",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_models",
+   "kind": "api"
+  },
+  {
+   "path": "/api/hwfit/system",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_system",
+   "kind": "api"
+  },
+  {
+   "path": "/api/image/denoise",
+   "methods": [
+    "POST"
+   ],
+   "name": "denoise_image",
+   "kind": "api"
+  },
+  {
+   "path": "/api/image/enhance-face",
+   "methods": [
+    "POST"
+   ],
+   "name": "enhance_face",
+   "kind": "api"
+  },
+  {
+   "path": "/api/image/harmonize",
+   "methods": [
+    "POST"
+   ],
+   "name": "harmonize_image",
+   "kind": "api"
+  },
+  {
+   "path": "/api/image/inpaint",
+   "methods": [
+    "POST"
+   ],
+   "name": "inpaint_proxy",
+   "kind": "api"
+  },
+  {
+   "path": "/api/image/remove-bg",
+   "methods": [
+    "POST"
+   ],
+   "name": "remove_background",
+   "kind": "api"
+  },
+  {
+   "path": "/api/image/sharpen",
+   "methods": [
+    "POST"
+   ],
+   "name": "sharpen_image",
+   "kind": "api"
+  },
+  {
+   "path": "/api/image/upscale-local",
+   "methods": [
+    "POST"
+   ],
+   "name": "upscale_image_local",
+   "kind": "api"
+  },
+  {
+   "path": "/api/import",
+   "methods": [
+    "POST"
+   ],
+   "name": "import_data",
+   "kind": "api"
+  },
+  {
+   "path": "/api/inject_context/{session_id}",
+   "methods": [
+    "POST"
+   ],
+   "name": "inject_context",
+   "kind": "api"
+  },
+  {
+   "path": "/api/internal/agent_tool",
+   "methods": [
+    "POST"
+   ],
+   "name": "agent_tool",
+   "kind": "api"
+  },
+  {
+   "path": "/api/mcp/oauth/authorize/{server_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "oauth_authorize",
+   "kind": "api"
+  },
+  {
+   "path": "/api/mcp/oauth/callback",
+   "methods": [
+    "GET"
+   ],
+   "name": "oauth_callback",
+   "kind": "api"
+  },
+  {
+   "path": "/api/mcp/oauth/exchange/{server_id}",
+   "methods": [
+    "POST"
+   ],
+   "name": "oauth_exchange",
+   "kind": "api"
+  },
+  {
+   "path": "/api/mcp/servers",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_servers",
+   "kind": "api"
+  },
+  {
+   "path": "/api/mcp/servers",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_server",
+   "kind": "api"
+  },
+  {
+   "path": "/api/mcp/servers/{server_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_server",
+   "kind": "api"
+  },
+  {
+   "path": "/api/mcp/servers/{server_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "toggle_server",
+   "kind": "api"
+  },
+  {
+   "path": "/api/mcp/servers/{server_id}/reconnect",
+   "methods": [
+    "POST"
+   ],
+   "name": "reconnect_server",
+   "kind": "api"
+  },
+  {
+   "path": "/api/mcp/servers/{server_id}/tools",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_server_tools",
+   "kind": "api"
+  },
+  {
+   "path": "/api/mcp/servers/{server_id}/tools",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_disabled_tools",
+   "kind": "api"
+  },
+  {
+   "path": "/api/mcp/tools",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_tools",
+   "kind": "api"
+  },
+  {
+   "path": "/api/memory",
+   "methods": [
+    "GET"
+   ],
+   "name": "api_get_memory",
+   "kind": "api"
+  },
+  {
+   "path": "/api/memory/add",
+   "methods": [
+    "POST"
+   ],
+   "name": "api_add_memory",
+   "kind": "api"
+  },
+  {
+   "path": "/api/memory/audit",
+   "methods": [
+    "POST"
+   ],
+   "name": "api_audit_memories",
+   "kind": "api"
+  },
+  {
+   "path": "/api/memory/by-session/{session_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_memory_by_session",
+   "kind": "api"
+  },
+  {
+   "path": "/api/memory/debug",
+   "methods": [
+    "POST"
+   ],
+   "name": "debug_memory_relevance",
+   "kind": "api"
+  },
+  {
+   "path": "/api/memory/extract",
+   "methods": [
+    "POST"
+   ],
+   "name": "extract_memory",
+   "kind": "api"
+  },
+  {
+   "path": "/api/memory/import",
+   "methods": [
+    "POST"
+   ],
+   "name": "import_memories_from_file",
+   "kind": "api"
+  },
+  {
+   "path": "/api/memory/search",
+   "methods": [
+    "POST"
+   ],
+   "name": "search_memories",
+   "kind": "api"
+  },
+  {
+   "path": "/api/memory/timeline",
+   "methods": [
+    "GET"
+   ],
+   "name": "memory_timeline",
+   "kind": "api"
+  },
+  {
+   "path": "/api/memory/{memory_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_memory",
+   "kind": "api"
+  },
+  {
+   "path": "/api/memory/{memory_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_memory_item",
+   "kind": "api"
+  },
+  {
+   "path": "/api/memory/{memory_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_memory",
+   "kind": "api"
+  },
+  {
+   "path": "/api/memory/{memory_id}/pin",
+   "methods": [
+    "POST"
+   ],
+   "name": "pin_memory",
+   "kind": "api"
+  },
+  {
+   "path": "/api/model-endpoints",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_model_endpoints",
+   "kind": "api"
+  },
+  {
+   "path": "/api/model-endpoints",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_model_endpoint",
+   "kind": "api"
+  },
+  {
+   "path": "/api/model-endpoints/probe-local",
+   "methods": [
+    "GET"
+   ],
+   "name": "probe_local_endpoints",
+   "kind": "api"
+  },
+  {
+   "path": "/api/model-endpoints/test",
+   "methods": [
+    "POST"
+   ],
+   "name": "test_model_endpoint",
+   "kind": "api"
+  },
+  {
+   "path": "/api/model-endpoints/{ep_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_model_endpoint",
+   "kind": "api"
+  },
+  {
+   "path": "/api/model-endpoints/{ep_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "toggle_model_endpoint",
+   "kind": "api"
+  },
+  {
+   "path": "/api/model-endpoints/{ep_id}/dependents",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_endpoint_dependents",
+   "kind": "api"
+  },
+  {
+   "path": "/api/model-endpoints/{ep_id}/models",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_endpoint_models",
+   "kind": "api"
+  },
+  {
+   "path": "/api/model-endpoints/{ep_id}/models",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_hidden_models",
+   "kind": "api"
+  },
+  {
+   "path": "/api/model-endpoints/{ep_id}/probe",
+   "methods": [
+    "GET"
+   ],
+   "name": "probe_endpoint_models",
+   "kind": "api"
+  },
+  {
+   "path": "/api/model/cached",
+   "methods": [
+    "GET"
+   ],
+   "name": "model_cached",
+   "kind": "api"
+  },
+  {
+   "path": "/api/model/download",
+   "methods": [
+    "POST"
+   ],
+   "name": "model_download",
+   "kind": "api"
+  },
+  {
+   "path": "/api/model/serve",
+   "methods": [
+    "POST"
+   ],
+   "name": "model_serve",
+   "kind": "api"
+  },
+  {
+   "path": "/api/models",
+   "methods": [
+    "GET"
+   ],
+   "name": "api_models",
+   "kind": "api"
+  },
+  {
+   "path": "/api/notes",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_notes",
+   "kind": "api"
+  },
+  {
+   "path": "/api/notes",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_note",
+   "kind": "api"
+  },
+  {
+   "path": "/api/notes/fire-reminder",
+   "methods": [
+    "POST"
+   ],
+   "name": "fire_reminder",
+   "kind": "api"
+  },
+  {
+   "path": "/api/notes/reorder",
+   "methods": [
+    "POST"
+   ],
+   "name": "reorder_notes",
+   "kind": "api"
+  },
+  {
+   "path": "/api/notes/{note_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_note",
+   "kind": "api"
+  },
+  {
+   "path": "/api/notes/{note_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_note",
+   "kind": "api"
+  },
+  {
+   "path": "/api/notes/{note_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_note",
+   "kind": "api"
+  },
+  {
+   "path": "/api/notes/{note_id}/archive",
+   "methods": [
+    "POST"
+   ],
+   "name": "toggle_archive",
+   "kind": "api"
+  },
+  {
+   "path": "/api/notes/{note_id}/items/{index}/toggle",
+   "methods": [
+    "POST"
+   ],
+   "name": "toggle_item",
+   "kind": "api"
+  },
+  {
+   "path": "/api/notes/{note_id}/pin",
+   "methods": [
+    "POST"
+   ],
+   "name": "toggle_pin",
+   "kind": "api"
+  },
+  {
+   "path": "/api/personal",
+   "methods": [
+    "GET"
+   ],
+   "name": "api_personal_list",
+   "kind": "api"
+  },
+  {
+   "path": "/api/personal/add_directory",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_directory_to_rag",
+   "kind": "api"
+  },
+  {
+   "path": "/api/personal/file",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_file_from_rag",
+   "kind": "api"
+  },
+  {
+   "path": "/api/personal/reload",
+   "methods": [
+    "POST"
+   ],
+   "name": "api_personal_reload",
+   "kind": "api"
+  },
+  {
+   "path": "/api/personal/remove_directory",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "remove_directory_from_rag",
+   "kind": "api"
+  },
+  {
+   "path": "/api/personal/upload",
+   "methods": [
+    "POST"
+   ],
+   "name": "upload_files_to_rag",
+   "kind": "api"
+  },
+  {
+   "path": "/api/ping",
+   "methods": [
+    "GET"
+   ],
+   "name": "ping_endpoints",
+   "kind": "api"
+  },
+  {
+   "path": "/api/prefs",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_all_prefs",
+   "kind": "api"
+  },
+  {
+   "path": "/api/prefs/{key}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_pref",
+   "kind": "api"
+  },
+  {
+   "path": "/api/prefs/{key}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "set_pref",
+   "kind": "api"
+  },
+  {
+   "path": "/api/presets",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_presets",
+   "kind": "api"
+  },
+  {
+   "path": "/api/presets/custom",
+   "methods": [
+    "POST"
+   ],
+   "name": "update_custom_preset",
+   "kind": "api"
+  },
+  {
+   "path": "/api/presets/expand",
+   "methods": [
+    "POST"
+   ],
+   "name": "expand_character_prompt",
+   "kind": "api"
+  },
+  {
+   "path": "/api/presets/groups",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_group_presets",
+   "kind": "api"
+  },
+  {
+   "path": "/api/presets/groups",
+   "methods": [
+    "POST"
+   ],
+   "name": "save_group_presets",
+   "kind": "api"
+  },
+  {
+   "path": "/api/presets/templates",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_user_templates",
+   "kind": "api"
+  },
+  {
+   "path": "/api/presets/templates",
+   "methods": [
+    "POST"
+   ],
+   "name": "save_user_template",
+   "kind": "api"
+  },
+  {
+   "path": "/api/presets/templates/{template_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_user_template",
+   "kind": "api"
+  },
+  {
+   "path": "/api/probe",
+   "methods": [
+    "GET"
+   ],
+   "name": "probe_models",
+   "kind": "api"
+  },
+  {
+   "path": "/api/probe-selected",
+   "methods": [
+    "POST"
+   ],
+   "name": "probe_selected",
+   "kind": "api"
+  },
+  {
+   "path": "/api/providers",
+   "methods": [
+    "GET"
+   ],
+   "name": "providers",
+   "kind": "api"
+  },
+  {
+   "path": "/api/rag/stats",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_rag_stats",
+   "kind": "api"
+  },
+  {
+   "path": "/api/research/active",
+   "methods": [
+    "GET"
+   ],
+   "name": "research_active",
+   "kind": "api"
+  },
+  {
+   "path": "/api/research/cancel/{session_id}",
+   "methods": [
+    "POST"
+   ],
+   "name": "research_cancel",
+   "kind": "api"
+  },
+  {
+   "path": "/api/research/detail/{session_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "research_detail",
+   "kind": "api"
+  },
+  {
+   "path": "/api/research/library",
+   "methods": [
+    "GET"
+   ],
+   "name": "research_library",
+   "kind": "api"
+  },
+  {
+   "path": "/api/research/report/{session_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "research_report",
+   "kind": "api"
+  },
+  {
+   "path": "/api/research/result-peek/{session_id}",
+   "methods": [
+    "POST"
+   ],
+   "name": "research_result_peek",
+   "kind": "api"
+  },
+  {
+   "path": "/api/research/result/{session_id}",
+   "methods": [
+    "POST"
+   ],
+   "name": "research_result",
+   "kind": "api"
+  },
+  {
+   "path": "/api/research/spinoff/{session_id}",
+   "methods": [
+    "POST"
+   ],
+   "name": "research_spinoff",
+   "kind": "api"
+  },
+  {
+   "path": "/api/research/start",
+   "methods": [
+    "POST"
+   ],
+   "name": "research_start",
+   "kind": "api"
+  },
+  {
+   "path": "/api/research/status/{session_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "research_status",
+   "kind": "api"
+  },
+  {
+   "path": "/api/research/stream/{session_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "research_stream",
+   "kind": "api"
+  },
+  {
+   "path": "/api/research/{session_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "research_delete",
+   "kind": "api"
+  },
+  {
+   "path": "/api/research/{session_id}/archive",
+   "methods": [
+    "POST"
+   ],
+   "name": "research_archive",
+   "kind": "api"
+  },
+  {
+   "path": "/api/research/{session_id}/hide-image",
+   "methods": [
+    "POST"
+   ],
+   "name": "research_hide_image",
+   "kind": "api"
+  },
+  {
+   "path": "/api/research/{session_id}/unhide-images",
+   "methods": [
+    "POST"
+   ],
+   "name": "research_unhide_images",
+   "kind": "api"
+  },
+  {
+   "path": "/api/rewrite",
+   "methods": [
+    "POST"
+   ],
+   "name": "rewrite_message",
+   "kind": "api"
+  },
+  {
+   "path": "/api/runtime",
+   "methods": [
+    "GET"
+   ],
+   "name": "runtime_info",
+   "kind": "api"
+  },
+  {
+   "path": "/api/search",
+   "methods": [
+    "GET"
+   ],
+   "name": "search_messages",
+   "kind": "api"
+  },
+  {
+   "path": "/api/search",
+   "methods": [
+    "POST"
+   ],
+   "name": "do_web_search",
+   "kind": "api"
+  },
+  {
+   "path": "/api/search/config",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_search_settings",
+   "kind": "api"
+  },
+  {
+   "path": "/api/search/providers",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_search_providers",
+   "kind": "api"
+  },
+  {
+   "path": "/api/search/query",
+   "methods": [
+    "POST"
+   ],
+   "name": "search_with_provider",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_session",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/openai",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_session_openai",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{session_id}/compact",
+   "methods": [
+    "POST"
+   ],
+   "name": "compact_session",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{session_id}/compact",
+   "methods": [
+    "POST"
+   ],
+   "name": "compact_session",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{session_id}/context_info",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_context_info",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{session_id}/delete-messages",
+   "methods": [
+    "POST"
+   ],
+   "name": "delete_messages",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{session_id}/edit-message",
+   "methods": [
+    "POST"
+   ],
+   "name": "edit_message",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{session_id}/fork",
+   "methods": [
+    "POST"
+   ],
+   "name": "fork_session",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{session_id}/important",
+   "methods": [
+    "POST"
+   ],
+   "name": "mark_session_important",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{session_id}/mark-stopped",
+   "methods": [
+    "POST"
+   ],
+   "name": "mark_stopped",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{session_id}/merge-last-assistant",
+   "methods": [
+    "POST"
+   ],
+   "name": "merge_last_assistant",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{session_id}/message",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_message",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{session_id}/truncate",
+   "methods": [
+    "POST"
+   ],
+   "name": "truncate_session",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{session_id}/update-last-meta",
+   "methods": [
+    "POST"
+   ],
+   "name": "update_last_meta",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{sid}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_session",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{sid}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "rename_session",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{sid}/archive",
+   "methods": [
+    "POST"
+   ],
+   "name": "archive_session",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{sid}/delete",
+   "methods": [
+    "POST"
+   ],
+   "name": "delete_session_beacon",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{sid}/export",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_session",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{sid}/inject_messages",
+   "methods": [
+    "POST"
+   ],
+   "name": "inject_messages",
+   "kind": "api"
+  },
+  {
+   "path": "/api/session/{sid}/unarchive",
+   "methods": [
+    "POST"
+   ],
+   "name": "unarchive_session",
+   "kind": "api"
+  },
+  {
+   "path": "/api/sessions",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_sessions",
+   "kind": "api"
+  },
+  {
+   "path": "/api/sessions/all",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_all_sessions",
+   "kind": "api"
+  },
+  {
+   "path": "/api/sessions/archived",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_archived_sessions",
+   "kind": "api"
+  },
+  {
+   "path": "/api/sessions/auto-sort",
+   "methods": [
+    "POST"
+   ],
+   "name": "auto_sort_sessions",
+   "kind": "api"
+  },
+  {
+   "path": "/api/sessions/bulk-delete",
+   "methods": [
+    "POST"
+   ],
+   "name": "bulk_delete_sessions",
+   "kind": "api"
+  },
+  {
+   "path": "/api/sessions/save",
+   "methods": [
+    "POST"
+   ],
+   "name": "sessions_save_now",
+   "kind": "api"
+  },
+  {
+   "path": "/api/shell/exec",
+   "methods": [
+    "POST"
+   ],
+   "name": "shell_exec",
+   "kind": "api"
+  },
+  {
+   "path": "/api/shell/stream",
+   "methods": [
+    "POST"
+   ],
+   "name": "shell_stream",
+   "kind": "api"
+  },
+  {
+   "path": "/api/signatures",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_signatures",
+   "kind": "api"
+  },
+  {
+   "path": "/api/signatures",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_signature",
+   "kind": "api"
+  },
+  {
+   "path": "/api/signatures/{sig_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_signature",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_skills",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/add",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_skill",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/audit-all",
+   "methods": [
+    "POST"
+   ],
+   "name": "audit_all_skills",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/audit-all/cancel",
+   "methods": [
+    "POST"
+   ],
+   "name": "audit_cancel",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/audit-all/status",
+   "methods": [
+    "GET"
+   ],
+   "name": "audit_status",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/builtin",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_builtin_skills",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/builtin/{name}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "reset_builtin_override",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/builtin/{name}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_builtin_skill",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/builtin/{name}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "set_builtin_override",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/index",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_index",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/search",
+   "methods": [
+    "POST"
+   ],
+   "name": "search_skills",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/{skill_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_skill",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/{skill_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_skill",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/{skill_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_skill",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/{skill_id}/markdown",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_skill_markdown",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/{skill_id}/markdown",
+   "methods": [
+    "POST"
+   ],
+   "name": "save_skill_markdown",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/{skill_id}/test",
+   "methods": [
+    "POST"
+   ],
+   "name": "test_skill",
+   "kind": "api"
+  },
+  {
+   "path": "/api/skills/{skill_id}/test-status",
+   "methods": [
+    "GET"
+   ],
+   "name": "test_skill_status",
+   "kind": "api"
+  },
+  {
+   "path": "/api/stt/stats",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_stt_stats",
+   "kind": "api"
+  },
+  {
+   "path": "/api/stt/transcribe",
+   "methods": [
+    "POST"
+   ],
+   "name": "transcribe_audio",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_tasks",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_task",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/meta/actions",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_actions",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/meta/events",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_events",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/meta/output-targets",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_output_targets",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/notifications",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_notifications",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/onboarding",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_tasks_onboarding",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/onboarding",
+   "methods": [
+    "POST"
+   ],
+   "name": "update_tasks_onboarding",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/parse",
+   "methods": [
+    "POST"
+   ],
+   "name": "parse_task",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/runs/active",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_active_runs",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/runs/recent",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_recent_runs",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/runs/{run_id}/live",
+   "methods": [
+    "GET"
+   ],
+   "name": "stream_run_live",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/runs/{run_id}/steps",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_run_steps",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/{task_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_task",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/{task_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_task",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/{task_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_task",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/{task_id}/clear-cache",
+   "methods": [
+    "POST"
+   ],
+   "name": "clear_task_cache",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/{task_id}/pause",
+   "methods": [
+    "POST"
+   ],
+   "name": "pause_task",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/{task_id}/resume",
+   "methods": [
+    "POST"
+   ],
+   "name": "resume_task",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/{task_id}/revert",
+   "methods": [
+    "POST"
+   ],
+   "name": "revert_task",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/{task_id}/run",
+   "methods": [
+    "POST"
+   ],
+   "name": "run_task_now",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/{task_id}/runs",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_runs",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/{task_id}/stop",
+   "methods": [
+    "POST"
+   ],
+   "name": "stop_task_now",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/{task_id}/webhook-regenerate",
+   "methods": [
+    "POST"
+   ],
+   "name": "regenerate_webhook",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tasks/{task_id}/webhook/{token}",
+   "methods": [
+    "POST"
+   ],
+   "name": "webhook_trigger",
+   "kind": "api"
+  },
+  {
+   "path": "/api/test-research",
+   "methods": [
+    "POST"
+   ],
+   "name": "test_research",
+   "kind": "api"
+  },
+  {
+   "path": "/api/test/youtube",
+   "methods": [
+    "GET"
+   ],
+   "name": "test_youtube",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tokens",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_tokens",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tokens",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_token",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tokens/{token_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_token",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tools",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_tools",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tools",
+   "methods": [
+    "POST"
+   ],
+   "name": "update_tools",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tts/clear-cache",
+   "methods": [
+    "POST"
+   ],
+   "name": "clear_tts_cache",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tts/stats",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_tts_stats",
+   "kind": "api"
+  },
+  {
+   "path": "/api/tts/synthesize",
+   "methods": [
+    "POST"
+   ],
+   "name": "synthesize_speech",
+   "kind": "api"
+  },
+  {
+   "path": "/api/upload",
+   "methods": [
+    "POST"
+   ],
+   "name": "api_upload",
+   "kind": "api"
+  },
+  {
+   "path": "/api/upload/cleanup",
+   "methods": [
+    "POST"
+   ],
+   "name": "manual_cleanup",
+   "kind": "api"
+  },
+  {
+   "path": "/api/upload/stats",
+   "methods": [
+    "GET"
+   ],
+   "name": "upload_stats",
+   "kind": "api"
+  },
+  {
+   "path": "/api/upload/{file_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "download_file",
+   "kind": "api"
+  },
+  {
+   "path": "/api/upload/{file_id}/vision",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_vision_text",
+   "kind": "api"
+  },
+  {
+   "path": "/api/upload/{file_id}/vision",
+   "methods": [
+    "PUT"
+   ],
+   "name": "put_vision_text",
+   "kind": "api"
+  },
+  {
+   "path": "/api/v1/chat",
+   "methods": [
+    "POST"
+   ],
+   "name": "sync_chat",
+   "kind": "api"
+  },
+  {
+   "path": "/api/vault/config",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_config",
+   "kind": "api"
+  },
+  {
+   "path": "/api/vault/config",
+   "methods": [
+    "POST"
+   ],
+   "name": "save_config",
+   "kind": "api"
+  },
+  {
+   "path": "/api/vault/lock",
+   "methods": [
+    "POST"
+   ],
+   "name": "lock",
+   "kind": "api"
+  },
+  {
+   "path": "/api/vault/login",
+   "methods": [
+    "POST"
+   ],
+   "name": "login",
+   "kind": "api"
+  },
+  {
+   "path": "/api/vault/logout",
+   "methods": [
+    "POST"
+   ],
+   "name": "logout",
+   "kind": "api"
+  },
+  {
+   "path": "/api/vault/unlock",
+   "methods": [
+    "POST"
+   ],
+   "name": "unlock",
+   "kind": "api"
+  },
+  {
+   "path": "/api/version",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_version",
+   "kind": "api"
+  },
+  {
+   "path": "/api/webhooks",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_webhooks",
+   "kind": "api"
+  },
+  {
+   "path": "/api/webhooks",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_webhook",
+   "kind": "api"
+  },
+  {
+   "path": "/api/webhooks/{webhook_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_webhook",
+   "kind": "api"
+  },
+  {
+   "path": "/api/webhooks/{webhook_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "toggle_webhook",
+   "kind": "api"
+  },
+  {
+   "path": "/api/webhooks/{webhook_id}/test",
+   "methods": [
+    "POST"
+   ],
+   "name": "test_webhook",
+   "kind": "api"
+  },
+  {
+   "path": "/backgrounds",
+   "methods": [
+    "GET"
+   ],
+   "name": "serve_backgrounds",
+   "kind": "api"
+  },
+  {
+   "path": "/calendar",
+   "methods": [
+    "GET"
+   ],
+   "name": "serve_calendar",
+   "kind": "api"
+  },
+  {
+   "path": "/cookbook",
+   "methods": [
+    "GET"
+   ],
+   "name": "serve_cookbook",
+   "kind": "api"
+  },
+  {
+   "path": "/docs",
+   "methods": [
+    "GET"
+   ],
+   "name": "swagger_ui_html",
+   "kind": "route"
+  },
+  {
+   "path": "/docs/oauth2-redirect",
+   "methods": [
+    "GET"
+   ],
+   "name": "swagger_ui_redirect",
+   "kind": "route"
+  },
+  {
+   "path": "/email",
+   "methods": [
+    "GET"
+   ],
+   "name": "serve_email",
+   "kind": "api"
+  },
+  {
+   "path": "/gallery",
+   "methods": [
+    "GET"
+   ],
+   "name": "serve_gallery",
+   "kind": "api"
+  },
+  {
+   "path": "/library",
+   "methods": [
+    "GET"
+   ],
+   "name": "serve_library",
+   "kind": "api"
+  },
+  {
+   "path": "/login",
+   "methods": [
+    "GET"
+   ],
+   "name": "serve_login",
+   "kind": "api"
+  },
+  {
+   "path": "/memory",
+   "methods": [
+    "GET"
+   ],
+   "name": "serve_memory",
+   "kind": "api"
+  },
+  {
+   "path": "/notes",
+   "methods": [
+    "GET"
+   ],
+   "name": "serve_notes",
+   "kind": "api"
+  },
+  {
+   "path": "/openapi.json",
+   "methods": [
+    "GET"
+   ],
+   "name": "openapi",
+   "kind": "route"
+  },
+  {
+   "path": "/redoc",
+   "methods": [
+    "GET"
+   ],
+   "name": "redoc_html",
+   "kind": "route"
+  },
+  {
+   "path": "/static",
+   "methods": [
+    "MOUNT"
+   ],
+   "name": "static",
+   "kind": "mount"
+  },
+  {
+   "path": "/tasks",
+   "methods": [
+    "GET"
+   ],
+   "name": "serve_tasks",
+   "kind": "api"
+  }
+ ]
+}

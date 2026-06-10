@@ -1,0 +1,1 @@
+Audit complete: every endpoint PASS or justified BLOCKED after two consecutive clean full passes (passes 4+5). 12 bugs fixed on audit/endpoint-fixes. See AUDIT/REPORT.md.

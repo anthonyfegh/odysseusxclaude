@@ -1,0 +1,122 @@
+{
+ "phase": 4,
+ "phase_name": "COMPLETE",
+ "updated": "2026-06-10T19:50:00",
+ "repo": "/Users/clawdio/odysseus",
+ "repo_head_main": "1b753f5",
+ "branch": "audit/endpoint-fixes",
+ "audit_commits": [
+  "9b8061c sidecar JSON-array fix",
+  "1d7f660 probe timeout fix",
+  "226b8c6 /api/chat claude_code dispatch",
+  "028064a history created_at->timestamp",
+  "7789aa1 presets 400 on bad JSON",
+  "8975b00 skills markdown rename guard",
+  "b710221 backgrounds 404 + middleware no-swallow",
+  "1dc3c8b cookbook ssh quoting",
+  "abcc7cd pymupdf 503 consistency",
+  "58a3e2e hwfit/email 400 on bad int",
+  "0288f3c email port guards",
+  "331aa09 cookbook state enc-token fix"
+ ],
+ "app": {
+  "running": true,
+  "url": "http://127.0.0.1:7860",
+  "log": "AUDIT/logs/app.log",
+  "bg_task": "bybcuz3vf",
+  "needs_restart_for": "1d7f660 probe fix + 226b8c6 /api/chat agent fix (restart AFTER round-1 fleet finishes)"
+ },
+ "sidecar": {
+  "running": true,
+  "url": "http://127.0.0.1:8750/v1",
+  "log": "AUDIT/logs/sidecar.log",
+  "bg_task": "byy7avc73",
+  "endpoint_id": "claude-cli-sidecar",
+  "running_fixed_code": true
+ },
+ "chromadb": {
+  "running": true,
+  "how": "docker container odysseus-chroma on 127.0.0.1:8100"
+ },
+ "admin": {
+  "username": "admin",
+  "password_file": "AUDIT/secrets/admin_password.txt",
+  "session_cookie_file": "AUDIT/secrets/cookies.txt",
+  "api_token_file": "AUDIT/secrets/api_token.txt",
+  "internal_token_file": "AUDIT/secrets/internal_token.txt",
+  "login": "POST /api/auth/login JSON {username,password,remember}; rate limit 15/min/IP"
+ },
+ "models": {
+  "default_endpoint_id": "claude-cli-sidecar",
+  "default_model": "claude-sonnet-4-6",
+  "utility_model": "claude-sonnet-4-6"
+ },
+ "endpoint_counts": {
+  "untested": 0,
+  "pass": 393,
+  "fail": 0,
+  "blocked": 43,
+  "deferred": 0
+ },
+ "full_pass_clean_streak": 2,
+ "llm_allowance": {
+  "exhausted": false,
+  "last_exhausted_at": "2026-06-10T18:50:00+02:00 (during convergence pass 4; fleet agents hit subscription session limit \"resets 7pm Europe/Madrid\"; reset confirmed 19:06)"
+ },
+ "round1_fleet": {
+  "workflow_run_id": "wf_df055fc7-7dd",
+  "task_id": "whqt54tig",
+  "status": "running",
+  "scope": "387 non-LLM/non-destructive endpoints in 27 batches"
+ },
+ "fixtures_alive": [
+  "one inert 70-byte PNG in data/uploads (no delete API for uploads)"
+ ],
+ "deferred_until_fleet_done": [
+  "RESTART app (pick up 1d7f660), then retest GET /api/probe and GET /api/model-endpoints/{ep}/probe",
+  "POST /api/documents/ai-tidy (bulk-deletes junk docs)",
+  "POST /api/sessions/auto-sort (deletes empty sessions)",
+  "POST /api/assistant/run/{task_id} (housekeeping actions mutate shared data)",
+  "POST /api/document/{doc_id}/ai-fill-annotations (needs PDF doc fixture)",
+  "POST /api/model/download (tiny repo sshleifer/tiny-gpt2) + POST /api/model/serve",
+  "optional: pip install rembg via cookbook to upgrade /api/image/remove-bg to full PASS",
+  "RETEST POST /api/chat on agent session a7a3a5df (expect engine-drained response)",
+  "Round-2 check: /api/rewrite and /api/session/{id}/compact behavior on agent-bound sessions"
+ ],
+ "phase4_destructive_deferred": [
+  "DELETE /api/admin/wipe/{kind} (one expendable kind only, e.g. notes after fleet)",
+  "DELETE /api/contacts/clear",
+  "POST /api/documents/tidy",
+  "DELETE /api/email/odysseus/reminders",
+  "POST /api/gallery/clear-ai-tags",
+  "POST /api/gallery/clear-user-tags",
+  "DELETE /api/sessions/all",
+  "POST /api/tasks/{task_id}/clear-cache"
+ ],
+ "next_actions": [
+  "none \u2014 audit complete; see AUDIT/REPORT.md"
+ ],
+ "agent_mode_addendum": {
+  "status": "COMPLETE \u2014 all 4 groups PASS (chat dual-path both green after 226b8c6)",
+  "crew_id": "68dd96fd-0536-4ecd-b0d1-3f0dc39419e3",
+  "agent_chat_session": "a7a3a5df-f0ed-4de7-a676-c2a8288bce07",
+  "claude_session_id": "0e43dc97-4bad-4098-9cae-7fc50b24f3d7"
+ },
+ "env_changes": [
+  "installed PyMuPDF in venv",
+  "ChromaDB docker on 127.0.0.1:8100",
+  "playwright MCP npx cached",
+  "ODYSSEUS_INTERNAL_TOKEN set at launch"
+ ],
+ "destructive_done": true,
+ "convergence": {
+  "pass1": "9 FAIL fixed",
+  "pass2": "2 FAIL fixed",
+  "pass3": "1 FAIL fixed",
+  "pass4": "CLEAN (0 FAIL)",
+  "pass5": "CLEAN (0 FAIL)",
+  "clean_streak": 2,
+  "converged": true
+ },
+ "done": true
+}

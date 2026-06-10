@@ -1,0 +1,16 @@
+{
+ "results": [
+  {
+   "method": "GET",
+   "path": "/api/hwfit/models",
+   "status": "PASS",
+   "evidence": "RETEST after 58a3e2e: ?gpu_count=abc -> 400 'gpu_count must be an integer' (was 500). Valid ?manual_mode=gpu&manual_gpu_count=1&manual_vram_gb=24 -> 200 (5 ranked models). Happy path unaffected."
+  },
+  {
+   "method": "PUT",
+   "path": "/api/email/config",
+   "status": "PASS",
+   "evidence": "RETEST after 58a3e2e: {imap_port:'abc'} -> 400 'imap_port must be an integer port number' (was 500). {email_auto_summarize:false} -> 200 {success:true}. Happy path unaffected."
+  }
+ ]
+}

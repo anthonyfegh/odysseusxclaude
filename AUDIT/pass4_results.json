@@ -1,0 +1,2556 @@
+{
+ "batches": [
+  {
+   "key": "admin-misc",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/agents/{agent_id}/documents",
+     "status": "PASS",
+     "evidence": "GET with fresh agent c3e70581 -> 200 {\"documents\":[]}; unknown id -> 404 'Agent not found'"
+    },
+    {
+     "method": "GET",
+     "path": "/api/agents/{agent_id}/files",
+     "status": "PASS",
+     "evidence": "GET fresh agent -> 200 {\"path\":\"\",\"entries\":[]}; ?path=../../etc -> 400 'Path is outside the workspace'"
+    },
+    {
+     "method": "GET",
+     "path": "/api/agents/{agent_id}/files/read",
+     "status": "PASS",
+     "evidence": "?path=hello.txt -> 200 {path,name,size:11,mtime ISO Z,binary:false,truncated:false,content}; no path -> 422; missing.txt -> 404 'File not found'"
+    },
+    {
+     "method": "GET",
+     "path": "/api/agents/{agent_id}/images",
+     "status": "PASS",
+     "evidence": "GET fresh agent -> 200 {\"images\":[]}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/agents/{agent_id}/research",
+     "status": "PASS",
+     "evidence": "GET fresh agent -> 200 {\"research\":[]}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/cleanup",
+     "status": "PASS",
+     "evidence": "POST (no body) -> 200 {\"archived_count\":0,\"deleted_count\":0,\"space_freed_mb\":0.0}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/cleanup/preview",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"sessions_to_archive\":[],\"sessions_to_delete\":[],\"preserved_sessions\":[],\"estimated_space_freed_mb\":0.0}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/export",
+     "status": "PASS",
+     "evidence": "GET -> 200, Content-Type application/json, Content-Disposition attachment; filename=odysseus_backup_20260610_191006.json; body keys {version:1, exported_at, exported_by, memories, presets, skills, settings, features, preferences}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/import",
+     "status": "PASS",
+     "evidence": "POST {memories:[{text:...}]} -> 200 {\"ok\":true,\"imported\":[\"1 memories\"]}, persisted to data/memory.json; re-post -> '0 memories' (dedup); '[]' body -> 400 'Expected a JSON object'",
+     "diagnosis": "First import attempt appeared unpersisted ~1 min later \u2014 traced to a concurrent audit agent clobbering data/memory.json (load-modify-save race between parallel batches), not an endpoint bug. Re-import verified write + dedup immediately. Note: shared memory.json last-write-wins race exists app-wide but is pre-known infra behavior, not a regression."
+    },
+    {
+     "method": "GET",
+     "path": "/api/tokens",
+     "status": "PASS",
+     "evidence": "GET -> 200 array; item shape {id,name,owner,token_prefix 'ody_xxxx',scopes:[\"chat\"],is_active,last_used_at,created_at}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/tokens",
+     "status": "PASS",
+     "evidence": "Form POST name=audit-tmp-token2 -> 200 {id:'6b722a52',name,owner:'admin',token:'ody_...',token_prefix,scopes:[\"chat\"]}; empty name -> 400 'Token name is required'"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/tokens/{token_id}",
+     "status": "PASS",
+     "evidence": "DELETE 6b722a52 -> 200 {\"status\":\"deleted\"}; re-delete -> 404 'Token not found'"
+    }
+   ],
+   "batch_notes": "All 12 admin-misc endpoints PASS, no regressions. Fixtures fully cleaned: agent c3e70581a8f2464785f7e05df610acfe deleted (200) + data/agents/<id>/ removed; audit-tmp tokens deleted (incl. leftover bb291c52 'audit-tmp-token' from a prior pass); imported audit-tmp memory deleted via DELETE /api/memory/<id>; grep confirms zero 'audit-tmp' in data/memory.json and data/presets.json; GET /api/tokens now []. Import was restricted to memories only \u2014 no settings/features/preferences keys touched. One environmental observation (not a failure): data/memory.json saves are last-write-wins, so parallel agents can clobber each other's memory writes; my first import was lost this way and re-verified successfully."
+  },
+  {
+   "key": "app-root",
+   "batch_notes": "Lean re-verification of batch 'app-root' (15 endpoints) against http://127.0.0.1:7860. All PASS, no deviations. /backgrounds returned 404 {\"detail\":\"backgrounds.html not found\"} as documented in the known-fixed list. Generated-image fixture data/generated_images/a0d17a31aabbccdd.png created and deleted after testing. No logins performed, no LLM calls, no settings touched.",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/",
+     "status": "PASS",
+     "evidence": "Authed GET / -> 200 text/html, 0 remaining {{CSP_NONCE}} placeholders, nonce=\"4f1423e7...\" injected; unauth -> 302 Location: /login"
+    },
+    {
+     "method": "GET",
+     "path": "/api/generated-image/{filename}",
+     "status": "PASS",
+     "evidence": "Authed GET a0d17a31aabbccdd.png (fixture) -> 200 image/png, Cache-Control: public, max-age=31536000, immutable; evil.txt -> 400 {\"detail\":\"Invalid filename\"}; deadbeefdeadbeef.png -> 404 {\"detail\":\"Image not found\"}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/health",
+     "status": "PASS",
+     "evidence": "Unauthenticated GET -> 200 {\"status\":\"healthy\",\"timestamp\":\"2026-06-10T17:07:32...\"}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/runtime",
+     "status": "PASS",
+     "evidence": "Authed GET -> 200 {\"in_docker\":false,\"ollama_base_url\":\"http://127.0.0.1:11434/v1\"}; unauth -> 401"
+    },
+    {
+     "method": "GET",
+     "path": "/api/version",
+     "status": "PASS",
+     "evidence": "Unauthenticated GET -> 200 {\"version\":\"0.9.1\"}"
+    },
+    {
+     "method": "GET",
+     "path": "/backgrounds",
+     "status": "PASS",
+     "evidence": "Authed GET -> 404 {\"detail\":\"backgrounds.html not found\"} (expected per known-fixed behavior list)"
+    },
+    {
+     "method": "GET",
+     "path": "/calendar",
+     "status": "PASS",
+     "evidence": "Authed GET -> 200 text/html (serve_index alias)"
+    },
+    {
+     "method": "GET",
+     "path": "/cookbook",
+     "status": "PASS",
+     "evidence": "Authed GET -> 200 text/html (serve_index alias)"
+    },
+    {
+     "method": "GET",
+     "path": "/email",
+     "status": "PASS",
+     "evidence": "Authed GET -> 200 text/html (serve_index alias)"
+    },
+    {
+     "method": "GET",
+     "path": "/gallery",
+     "status": "PASS",
+     "evidence": "Authed GET -> 200 text/html (serve_index alias)"
+    },
+    {
+     "method": "GET",
+     "path": "/library",
+     "status": "PASS",
+     "evidence": "Authed GET -> 200 text/html (serve_index alias)"
+    },
+    {
+     "method": "GET",
+     "path": "/login",
+     "status": "PASS",
+     "evidence": "Unauthenticated GET -> 200 text/html (auth-exempt login page)"
+    },
+    {
+     "method": "GET",
+     "path": "/memory",
+     "status": "PASS",
+     "evidence": "Authed GET -> 200 text/html (serve_index alias)"
+    },
+    {
+     "method": "GET",
+     "path": "/notes",
+     "status": "PASS",
+     "evidence": "Authed GET -> 200 text/html; unauth -> 302 Location: /login"
+    },
+    {
+     "method": "GET",
+     "path": "/tasks",
+     "status": "PASS",
+     "evidence": "Authed GET -> 200 text/html (serve_index alias)"
+    }
+   ]
+  },
+  {
+   "key": "auth-1",
+   "results": [
+    {
+     "method": "POST",
+     "path": "/api/auth/2fa/confirm",
+     "status": "PASS",
+     "evidence": "bad {\"code\":\"000000\"} -> 400 \"Invalid code \u2014 try again\"; pyotp code -> 200 {ok:true, backup_codes:[8 strings]}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/auth/2fa/disable",
+     "status": "PASS",
+     "evidence": "wrong password -> 400 \"Invalid password\"; correct -> 200 {ok:true}; GET 2fa/status after -> {enabled:false}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/auth/2fa/setup",
+     "status": "PASS",
+     "evidence": "200 {secret, uri:\"otpauth://totp/Odysseus:audit-...\", qr_code:\"data:image/png;base64,...\"}; repeat while enabled -> 400 \"2FA is already enabled\""
+    },
+    {
+     "method": "GET",
+     "path": "/api/auth/2fa/status",
+     "status": "PASS",
+     "evidence": "fresh user cookie -> 200 {\"enabled\":false} (true mid-flow); no cookie -> 401 \"Not authenticated\""
+    },
+    {
+     "method": "POST",
+     "path": "/api/auth/change-password",
+     "status": "PASS",
+     "evidence": "new_password \"short\" -> 400 \"Password must be at least 8 characters\"; valid change -> 200 {ok:true}; reverted with second 200 call"
+    },
+    {
+     "method": "GET",
+     "path": "/api/auth/features",
+     "status": "PASS",
+     "evidence": "no cookie -> 200 flat dict of 8 feature->bool entries (web_search, gallery, ...)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/auth/features",
+     "status": "PASS",
+     "evidence": "{\"gallery\":false} -> 200 full dict with gallery:false (restored to true after); non-admin cookie -> 403"
+    },
+    {
+     "method": "GET",
+     "path": "/api/auth/integrations",
+     "status": "PASS",
+     "evidence": "admin -> 200 {\"integrations\":[...]} (api_key masked/empty); non-admin -> 403"
+    },
+    {
+     "method": "POST",
+     "path": "/api/auth/integrations",
+     "status": "PASS",
+     "evidence": "ntfy preset create -> 200 {ok:true, integration:{id:\"838824fd02c0\" 12-hex, enabled:true, preset defaults merged}}; non-admin -> 403"
+    },
+    {
+     "method": "GET",
+     "path": "/api/auth/integrations/presets",
+     "status": "PASS",
+     "evidence": "no cookie -> 200 {presets:{miniflux:{auth_type:\"header\",...}, ntfy:{...}, ...}}, no api_key fields"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/auth/integrations/{integration_id}",
+     "status": "PASS",
+     "evidence": "DELETE id -> 200 {ok:true}; repeat -> 404 \"Integration not found\"; list shows []"
+    },
+    {
+     "method": "PUT",
+     "path": "/api/auth/integrations/{integration_id}",
+     "status": "PASS",
+     "evidence": "{name,enabled:false} -> 200 {ok:true, integration updated, id unchanged, api_key masked}; PUT /doesnotexist -> 404 \"Integration not found\""
+    },
+    {
+     "method": "POST",
+     "path": "/api/auth/integrations/{integration_id}/test",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "no ntfy backend on 127.0.0.1:8091 -> 200 {ok:false, message:\"ntfy publish to http://127.0.0.1:8091/Reminders failed: All connection attempts failed.\"}; unknown id -> 404",
+     "diagnosis": "Graceful per documented behavior (ok:false with 200, never 5xx); true ok:true path needs a live ntfy"
+    },
+    {
+     "method": "POST",
+     "path": "/api/auth/login",
+     "status": "PASS",
+     "evidence": "audit-tmp user login -> 200 {ok:true,username} + Set-Cookie odysseus_session HttpOnly Max-Age=604800 SameSite=lax",
+     "reason": "wrong-password 401 check skipped deliberately (shared 15/min login rate limit, one-login rule)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/auth/logout",
+     "status": "PASS",
+     "evidence": "tmp-user cookie -> 200 {ok:true} + Set-Cookie odysseus_session=\"\" Max-Age=0; token revoked (next request 401). Admin cookie never used here"
+    },
+    {
+     "method": "GET",
+     "path": "/api/auth/settings",
+     "status": "PASS",
+     "evidence": "anon -> 200 62-key dict; admin -> same shape; all secret-bearing keys empty on this install so scrub comparison is vacuous but no leakage observed"
+    },
+    {
+     "method": "POST",
+     "path": "/api/auth/settings",
+     "status": "PASS",
+     "evidence": "{reminder_ntfy_topic:\"audit-tmp-topic\"} -> 200 full 62-key dict with new value; restored to \"Reminders\"; non-admin -> 403"
+    },
+    {
+     "method": "POST",
+     "path": "/api/auth/setup",
+     "status": "PASS",
+     "evidence": "configured instance -> 400 \"Already configured\" as documented",
+     "reason": "happy path is one-shot per deployment and not reproducible on a configured instance; documented configured-state behavior confirmed"
+    },
+    {
+     "method": "POST",
+     "path": "/api/auth/signup",
+     "status": "PASS",
+     "evidence": "short password -> 400 \"Password must be at least 8 characters\"; valid -> 200 {ok:true, message:\"Account created\"} (user audit-tmp-auth1, deleted in teardown)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/auth/signup-toggle",
+     "status": "PASS",
+     "evidence": "admin POST -> 200 {ok:true, signup_enabled:true}; toggled back to original false after signup test; non-admin -> 403"
+    }
+   ],
+   "batch_notes": "No regressions in batch auth-1: 19 PASS, 1 BLOCKED (integrations/{id}/test, no-creds-graceful \u2014 graceful 200 ok:false exactly as documented). All responses matched test_plan shapes including error strings. One transient artifact during the run: zsh non-splitting of a $A variable mangled curl's -b flag, producing spurious 401/307s on first attempts; re-runs with explicit flags confirmed correct behavior (the 307s were redirects to an empty-id path /api/auth/integrations/). Teardown complete: audit-tmp-auth1 user deleted via DELETE /api/auth/users (body {username}), audit-tmp integration deleted, signup_enabled restored to false, features.gallery restored to true, reminder_ntfy_topic restored to \"Reminders\", tmp cookie/secret files removed, 2FA disabled before logout. Exactly one login performed; admin cookie/session untouched."
+  },
+  {
+   "key": "auth-2",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/auth/status",
+     "status": "PASS",
+     "evidence": "No cookie: 200 {configured:true,authenticated:false,signup_enabled:false}; admin cookie: 200 adds username:'admin', is_admin:true, privileges dict",
+     "reason": "Matches test_plan for both anonymous and authenticated shapes"
+    },
+    {
+     "method": "POST",
+     "path": "/api/auth/users",
+     "status": "PASS",
+     "evidence": "Create audit-tmp-bob -> 200 {ok:true}; short password -> 400 'Password must be at least 8 characters'; duplicate -> 409 'Username already taken'",
+     "reason": "Happy path and both documented bad_input codes match"
+    },
+    {
+     "method": "GET",
+     "path": "/api/auth/users",
+     "status": "PASS",
+     "evidence": "Admin cookie -> 200 {users:[admin, audit-tmp-bob]} with privileges per user; no cookie -> 401 'Not authenticated'",
+     "reason": "List shape matches; unauthenticated rejected (401 from middleware, consistent with prior passes)"
+    },
+    {
+     "method": "PUT",
+     "path": "/api/auth/users/{username}/privileges",
+     "status": "PASS",
+     "evidence": "PUT audit-tmp-bob {can_use_bash:false,can_use_research:true} -> 200 {ok:true,privileges:{merged set with can_use_bash:false}}; missing user -> 404 'User not found or is admin'",
+     "reason": "Merged effective privileges returned; bad_input matches"
+    },
+    {
+     "method": "PUT",
+     "path": "/api/auth/users/{username}/rename",
+     "status": "PASS",
+     "evidence": "Rename audit-tmp-bob -> audit-tmp-robert: 200 {ok:true,username:'audit-tmp-robert',renamed_self:false}; empty username -> 400 'Username required'",
+     "reason": "Shape and renamed_self flag match test_plan"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/auth/users",
+     "status": "PASS",
+     "evidence": "DELETE body {username:'audit-tmp-robert'} with admin cookie -> 200 {ok:true}, user absent from subsequent list; no cookie -> 401",
+     "reason": "JSON-body DELETE works; fixture cleaned up. Protected-target 400 case skipped (would require targeting 'admin', forbidden by safety rules)"
+    }
+   ],
+   "batch_notes": "Batch auth-2: 6/6 PASS, no regressions. Note: first run of the batch script produced universal 401s because zsh does not word-split an unquoted $CK variable holding '-b <file>' \u2014 the cookie was never sent. Not an app issue; verified cookie file valid and reran with setopt shwordsplit. Unauthenticated admin-route rejections return 401 'Not authenticated' (middleware) rather than the 403 wording in the plan text, consistent with prior passes. Fixtures audit-tmp-bob/audit-tmp-robert created and deleted; final user list contains only 'admin'. The DELETE bad_input (protected target -> 400) intentionally not exercised since the only protected target is the live 'admin' account (hard safety rule 1)."
+  },
+  {
+   "key": "calendar+contacts-1",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/calendar/calendars",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"calendars\":[{\"name\":\"Personal\",\"href\":\"00c80996-...\",\"color\":\"#5b8abf\"},...]}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/calendar/calendars",
+     "status": "PASS",
+     "evidence": "POST ?name=audit-tmp-cal2&color=%23ff0000 -> 200 {\"ok\":true,\"id\":\"ea4f4efa-...\",\"name\":\"audit-tmp-cal2\",\"color\":\"#ff0000\"}"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/calendar/calendars/{cal_id}",
+     "status": "PASS",
+     "evidence": "DELETE fixture cal -> 200 {\"ok\":true}; repeat/unknown id -> 404"
+    },
+    {
+     "method": "PUT",
+     "path": "/api/calendar/calendars/{cal_id}",
+     "status": "PASS",
+     "evidence": "PUT ?name=audit-tmp-cal2-r&color=%2300ff00 -> 200 {\"ok\":true}; unknown id -> 404 {\"detail\":\"Calendar not found\"}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/calendar/config",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"url\":\"\",\"username\":\"\",\"password\":\"\",\"has_password\":false,\"local\":true}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/calendar/config",
+     "status": "PASS",
+     "evidence": "POST creds -> {\"ok\":true}, GET shows url+has_password:true local:false; POST {} -> {\"ok\":true,\"cleared\":true}; restored to empty"
+    },
+    {
+     "method": "GET",
+     "path": "/api/calendar/events",
+     "status": "PASS",
+     "evidence": "GET ?start=2026-06-01&end=2026-07-01 -> 200 events[] with full shape (uid,summary,dtstart,calendar_href,color,series_uid...); start=NaN -> 200 {\"events\":[]}; missing params -> 422"
+    },
+    {
+     "method": "POST",
+     "path": "/api/calendar/events",
+     "status": "PASS",
+     "evidence": "POST summary/dtstart/dtend/calendar_href -> 200 {\"ok\":true,\"uid\":\"dde88930-...\"}; missing summary -> 422"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/calendar/events/{uid}",
+     "status": "PASS",
+     "evidence": "DELETE fixture uid -> 200 {\"ok\":true}; unknown uid -> 404"
+    },
+    {
+     "method": "PUT",
+     "path": "/api/calendar/events/{uid}",
+     "status": "PASS",
+     "evidence": "PUT {\"summary\":\"audit-tmp Renamed\",\"location\":\"Office\"} -> 200 {\"ok\":true}; uid '::x' -> 400"
+    },
+    {
+     "method": "GET",
+     "path": "/api/calendar/export/{cal_id}",
+     "status": "PASS",
+     "evidence": "GET -> 200 text/calendar, Content-Disposition attachment filename=\"audit-tmp-cal2-r.ics\", body BEGIN:VCALENDAR + VEVENT; unknown id -> 404"
+    },
+    {
+     "method": "POST",
+     "path": "/api/calendar/import",
+     "status": "PASS",
+     "evidence": "multipart ICS ?calendar_name=audit-tmp-import -> 200 {\"ok\":true,\"imported\":1,\"skipped\":0,...}; re-import skipped:1; non-ICS -> 400 \"Invalid ICS file: ...\""
+    },
+    {
+     "method": "GET",
+     "path": "/api/calendar/subscriptions",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"subscriptions\":[]} then [{\"id\":\"ics-d7f7a262f667fa69995b838b\",\"url\":...,\"name\":\"audit-tmp-feed\"}] after POST"
+    },
+    {
+     "method": "POST",
+     "path": "/api/calendar/subscriptions",
+     "status": "PASS",
+     "evidence": "POST local feed http://127.0.0.1:8799/audit-tmp.ics -> 200 {\"ok\":true,\"id\":\"ics-<24hex>\",\"events\":1}; ftp://x -> 200 {\"ok\":false,\"error\":\"URL must be http(s):// or webcal://\"}"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/calendar/subscriptions/{sub_id}",
+     "status": "PASS",
+     "evidence": "DELETE ics-d7f7a262... -> 200 {\"ok\":true} (synced feed calendar removed from /calendars); unknown id -> 404"
+    },
+    {
+     "method": "POST",
+     "path": "/api/calendar/sync",
+     "status": "PASS",
+     "evidence": "POST with local ics sub -> 200 {\"calendars\":1,\"events\":1,\"deleted\":0,\"errors\":[]}; unconfigured -> 200 {\"calendars\":0,...,\"errors\":[\"No calendar sources configured\"]}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/calendar/test",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "POST {} (no saved config) -> 200 {\"ok\":false,\"error\":\"Missing URL, username, or password\"}; happy path needs a real CalDAV server"
+    },
+    {
+     "method": "POST",
+     "path": "/api/contacts/add",
+     "status": "PASS",
+     "evidence": "fresh email -> 200 {\"success\":true}; existing email -> {\"success\":true,\"message\":\"Already exists\",\"contact\":{...}}; {} -> {\"success\":false,\"error\":\"Email required\"}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/contacts/config",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"url\":\"\",\"username\":\"\",\"password\":\"\"}; after PUT password masked as \"***\""
+    },
+    {
+     "method": "PUT",
+     "path": "/api/contacts/config",
+     "status": "PASS",
+     "evidence": "PUT carddav_* -> 200 {\"success\":true}, GET reflects url/username; restored to prior empty values, verified"
+    }
+   ],
+   "batch_notes": "No regressions in batch calendar+contacts-1: 19 PASS, 1 BLOCKED (POST /api/calendar/test, no-creds-graceful \u2014 clean ok:false error, needs live CalDAV for happy path). All session fixtures cleaned (audit-tmp calendars/event/subscription deleted, audit-tmp-r3 contact removed from data/contacts.json, temp files removed); calendar config and contacts CardDAV config restored to exact prior (empty) values. Leftovers from PRIOR passes remain: calendar 'audit-tmp-Renamed' (c46b1f7a-9999-442f-8fcf-66de8752f4de) and contact audit-tmp-sara@example.com \u2014 the auto-mode permission classifier denied deleting pre-session resources, so they were left untouched."
+  },
+  {
+   "key": "calendar+contacts-2",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/contacts/export",
+     "status": "PASS",
+     "evidence": "GET ?format=csv -> 200 text/csv, attachment filename=\"odysseus-contacts.csv\", header row name,email,phone; default -> text/vcard BEGIN:VCARD blocks; ?format=xml -> 422"
+    },
+    {
+     "method": "POST",
+     "path": "/api/contacts/import",
+     "status": "PASS",
+     "evidence": "vcf body -> 200 {\"imported\":1,\"failed\":0,\"total\":1,\"success\":true}; {} -> {\"success\":false,\"error\":\"No contact data found\"}; {\"vcf\":\"hello\"} -> {\"success\":false,\"error\":\"No vCard data found\"}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/contacts/list",
+     "status": "PASS",
+     "evidence": "200 {\"contacts\":[{uid,name,emails,phones}],\"count\":1} with admin cookie"
+    },
+    {
+     "method": "GET",
+     "path": "/api/contacts/search",
+     "status": "PASS",
+     "evidence": "?q=audit-tmp bob -> 200 {\"results\":[{uid,name,emails:[..],phones:[]}]}; missing q -> {\"results\":[]}"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/contacts/{uid}",
+     "status": "PASS",
+     "evidence": "DELETE imported fixture uid -> 200 {\"success\":true}; contact absent from subsequent export"
+    },
+    {
+     "method": "PUT",
+     "path": "/api/contacts/{uid}",
+     "status": "PASS",
+     "evidence": "PUT {name,emails[2],phones[1]} -> 200 {\"success\":true}, edit reflected in export; phones-only body -> {\"success\":false,\"error\":\"Name or email required\"}"
+    }
+   ],
+   "batch_notes": "All 6 endpoints match documented behavior; no regressions. Fixture cleanup: my imported 'audit-tmp Bob' contact was deleted. One leftover 'audit-tmp Sara Lee' (uid abc33a63-f643-4633-a48b-6766cdf2a5eb, from a prior audit pass) remains in contacts \u2014 the permission classifier denied deleting a record not created this session; orchestrator/user should remove it (DELETE /api/contacts/abc33a63-f643-4633-a48b-6766cdf2a5eb with admin cookie)."
+  },
+  {
+   "key": "chat+assistant+stt+tts",
+   "batch_notes": "Lean re-verification of batch 'chat+assistant+stt+tts': 13 PASS, 2 BLOCKED (no-creds-graceful: STT/TTS providers 'disabled' on this install), 1 of the 13 (chat/resume) verified via documented idle-404 only since the streaming happy path requires an in-flight LLM run (llm-reserved) - marked BLOCKED for accuracy, idle behavior matches docs. No regressions found. Fixtures: created+deleted session 'audit-tmp-chatbatch' (e123ce6d); assistant crew name patched to 'Testy' then restored to 'Assistant'; check-in 8a92cb8a enabled flag set to its existing value (false, no net change); TTS cache cleared (idempotent, documented-safe). No logins performed, no LLM calls triggered, no admin state altered.",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/assistant/available-timezones",
+     "status": "PASS",
+     "evidence": "GET w/ admin cookie -> 200, 598 sorted IANA zones incl. America/New_York and UTC; no cookie -> 401"
+    },
+    {
+     "method": "GET",
+     "path": "/api/assistant/run-status/{task_id}",
+     "status": "PASS",
+     "evidence": "GET /api/assistant/run-status/5dd7a551 -> 200 {\"status\":\"done\",\"result_status\":\"success\"}; nonexistent id -> 404"
+    },
+    {
+     "method": "GET",
+     "path": "/api/assistant/session",
+     "status": "PASS",
+     "evidence": "GET -> 200 {session_id:a7a3a5df...,crew_member_id:68dd96fd...,name:\"Assistant\"}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/assistant/settings",
+     "status": "PASS",
+     "evidence": "GET -> 200 {crew(all documented fields),check_ins x11 with id/name/scheduled_time/enabled,task_ids}"
+    },
+    {
+     "method": "PATCH",
+     "path": "/api/assistant/settings",
+     "status": "PASS",
+     "evidence": "PATCH {name:\"Testy\",check_ins:[{id:8a92cb8a,enabled:false}]} -> 200 crew.name==Testy, check-in reflected; restored name=Assistant; check_ins entry missing 'id' -> 422"
+    },
+    {
+     "method": "GET",
+     "path": "/api/chat/resume/{session_id}",
+     "status": "BLOCKED",
+     "reason": "llm-reserved",
+     "evidence": "Idle owned session -> 404 {\"detail\":\"No active run for this session\"} exactly as documented; SSE replay happy path needs an in-flight LLM run",
+     "diagnosis": "Active-run replay validated in prior full passes; idle behavior unchanged"
+    },
+    {
+     "method": "POST",
+     "path": "/api/chat/stop/{session_id}",
+     "status": "PASS",
+     "evidence": "POST on idle owned session -> 200 {\"stopped\":false}; unknown session -> 404"
+    },
+    {
+     "method": "GET",
+     "path": "/api/chat/stream_status/{session_id}",
+     "status": "PASS",
+     "evidence": "Idle owned session -> 404 {\"detail\":\"No active stream for this session\"} (documented expected idle result)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/inject_context/{session_id}",
+     "status": "PASS",
+     "evidence": "Form context=... -> 200 {\"status\":\"context_injected\"}; injected message confirmed via /api/search snippet; missing 'context' field -> 422"
+    },
+    {
+     "method": "GET",
+     "path": "/api/search",
+     "status": "PASS",
+     "evidence": "GET ?q=auditpongtoken&limit=5 -> 200 [{session_id,session_name,role,content_snippet,timestamp}] matching injected message; limit=0 -> 422"
+    },
+    {
+     "method": "GET",
+     "path": "/api/stt/stats",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"available\":false,\"provider\":\"disabled\",\"model\":\"base\",\"language\":\"\"}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/stt/transcribe",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "Multipart WAV upload with provider 'disabled' -> clean 503 {\"message\":\"STT service not available or set to browser mode\"}; missing 'file' -> 422"
+    },
+    {
+     "method": "POST",
+     "path": "/api/tts/clear-cache",
+     "status": "PASS",
+     "evidence": "POST empty body -> 200 {\"success\":true,\"message\":\"Cache cleared\"}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/tts/stats",
+     "status": "PASS",
+     "evidence": "GET -> 200 {available:false,ready:false,provider:\"disabled\",model,voice,speed,cache_entries,cache_size_mb}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/tts/synthesize",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "POST {text,format:base64} with provider 'disabled' -> clean 503 {\"message\":\"TTS service not available\"}; missing 'text' -> 422"
+    }
+   ]
+  },
+  {
+   "key": "cookbook+hwfit+embeddings",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/cookbook/gpus",
+     "status": "PASS",
+     "evidence": "GET no params -> 200 {ok:false,error:'nvidia-smi not found',gpus:[]} (GPU-less mac); ?ssh_port=99x -> 400 'Invalid ssh_port'"
+    },
+    {
+     "method": "GET",
+     "path": "/api/cookbook/hf-latest",
+     "status": "PASS",
+     "evidence": "GET ?vram_gb=24&limit=5&pipeline=text-generation -> 200 models[] with est_vram_gb/needed_vram_gb<=24; vram_gb=abc -> 422"
+    },
+    {
+     "method": "POST",
+     "path": "/api/cookbook/kill-pid",
+     "status": "PASS",
+     "evidence": "Killed own sleep fixture PID 21578 -> 200 {ok:true,pid,signal:TERM}, process confirmed gone; pid 50 -> 400 'Refusing to signal PID 50'; signal HUP -> 400 'signal must be TERM, KILL, or INT'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/cookbook/setup",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "POST {host:'audit-tmp@127.0.0.1',ssh_port:'1'} -> 200 {ok:false,output:'ssh: connect to host 127.0.0.1 port 1: Connection refused',platform:''} (matches known-fixed ok:false-with-real-ssh-error); empty host -> 400 'host is required'; happy path needs a real SSH target"
+    },
+    {
+     "method": "GET",
+     "path": "/api/cookbook/ssh-key",
+     "status": "PASS",
+     "evidence": "GET -> 200 {configured:true,public_key:'ssh-ed25519 ...'}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/cookbook/ssh-key",
+     "status": "PASS",
+     "evidence": "POST empty body -> 200 {ok:true,public_key:'ssh-ed25519 ...'} (idempotent, key pre-existing)"
+    },
+    {
+     "method": "GET",
+     "path": "/api/cookbook/state",
+     "status": "PASS",
+     "evidence": "GET -> 200 state dict with hfToken masked as hfTokenConfigured:false/hfTokenMasked:'' (no raw token); round-trip returned exactly what was POSTed"
+    },
+    {
+     "method": "POST",
+     "path": "/api/cookbook/state",
+     "status": "PASS",
+     "evidence": "POST audit-tmp task -> 200 {ok:true,preserved:0}, GET round-trip matched; non-dict JSON body '\"[]\"' coerced -> 200 {ok:true} (no 4xx); prior state restored after test"
+    },
+    {
+     "method": "GET",
+     "path": "/api/cookbook/tasks/status",
+     "status": "PASS",
+     "evidence": "With saved fixture task -> 200 {tasks:[{session_id:'cookbook-deadbeef',type:'download',model:'y',status:'stopped',remote:'local',progress/phase/diagnosis/output_tail/cmd/tps/reqs/pct}]}; empty state -> {tasks:[]}"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/embeddings/endpoint",
+     "status": "PASS",
+     "evidence": "DELETE -> 200 {success:true}; subsequent GET shows url:'',active:false (reverted to fastembed)"
+    },
+    {
+     "method": "GET",
+     "path": "/api/embeddings/endpoint",
+     "status": "PASS",
+     "evidence": "GET -> 200 {url:'',model:'',active:false} when unset; active:true with saved URL/model after POST"
+    },
+    {
+     "method": "POST",
+     "path": "/api/embeddings/endpoint",
+     "status": "PASS",
+     "evidence": "Form POST url=http://127.0.0.1:9999/v1/embeddings&model=test-model against local stub -> 200 {success:true,url,model}, GET showed active:true; whitespace url -> 400 'URL is required'; empty-value url= dropped by form parser -> 422 (both 4xx, documented 400 path confirmed reachable); cleaned up via DELETE",
+     "diagnosis": "Minor doc nuance: literally-empty form value 'url=' yields 422 field-required (python-multipart drops empty value) rather than handler 400; handler's 400 'URL is required' fires for whitespace-only url. Both reject; no regression."
+    },
+    {
+     "method": "GET",
+     "path": "/api/embeddings/models",
+     "status": "PASS",
+     "evidence": "GET -> 200 array with model/dim/size_gb/description/downloaded/downloading/active/recommended/cached_size_mb, sorted active-first, exactly one active (sentence-transformers/all-MiniLM-L6-v2)"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/embeddings/models/{model_name:path}",
+     "status": "PASS",
+     "evidence": "DELETE uncached BAAI/bge-small-zh-v1.5 -> 200 {deleted:false,message:'Model not cached'}; DELETE active all-MiniLM-L6-v2 -> 400 'Cannot delete the active embedding model' (skipped deleting a real cached model to preserve user cache; documented not-cached branch exercised)"
+    },
+    {
+     "method": "GET",
+     "path": "/api/embeddings/models/{model_name:path}/status",
+     "status": "PASS",
+     "evidence": "GET BAAI/bge-small-en-v1.5/status -> 200 {model,downloaded:true,downloading:false}; unknown model -> 404"
+    },
+    {
+     "method": "GET",
+     "path": "/api/hwfit/image-models",
+     "status": "PASS",
+     "evidence": "GET ?manual_mode=gpu&manual_vram_gb=24&sort=fit -> 200 {system:{gpu_vram_gb:24,gpu_count:1,'Simulated CUDA GPU'},models:[ranked]}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/hwfit/models",
+     "status": "PASS",
+     "evidence": "GET ?limit=5&manual_mode=gpu&manual_gpu_count=1&manual_vram_gb=24&manual_backend=cuda -> 200 {system:{gpu_vram_gb:24,simulated},models:[]}; gpu_count=abc -> 400 'gpu_count must be an integer' (matches known-fixed bad-int behavior, no longer 500)"
+    },
+    {
+     "method": "GET",
+     "path": "/api/hwfit/system",
+     "status": "PASS",
+     "evidence": "GET -> 200 {total_ram_gb:24,cpu_name:'Apple M4 Pro',has_gpu:true,gpu_vram_gb:18,gpu_count:1,gpus,gpu_groups,backend:'metal',unified_memory:true}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/model/cached",
+     "status": "PASS",
+     "evidence": "GET -> 200 {models:[{repo_id,size,nb_files,has_incomplete,status:'ready',path,is_diffusion}...],host:'local'}; ?ssh_port=abc -> 400 'Invalid ssh_port'"
+    }
+   ],
+   "batch_notes": "Lean re-verification of batch 'cookbook+hwfit+embeddings' (18 endpoints): 17 PASS, 1 BLOCKED (POST /api/cookbook/setup, no-creds-graceful \u2014 clean ok:false with real ssh 'Connection refused', matching the known-fixed expectation). No regressions found. All known-fixed behaviors held (bad-int -> 400 on gpu_count/ssh_port, cookbook/setup ok:false with real ssh error, cookbook/state non-dict POST -> ok:true). One doc nuance recorded on POST /api/embeddings/endpoint: a literally-empty form value 'url=' is dropped by the multipart parser yielding 422 instead of the documented 400; the handler 400 'URL is required' branch is reachable (whitespace url) \u2014 both are clean 4xx rejections. Fixtures cleaned: cookbook state restored to prior {\"tasks\":[],\"env\":{}}, embedding endpoint config deleted (prior was inactive), stub HTTP server killed, sleep fixture killed by the endpoint under test. No LLM calls triggered, single admin cookie reused, no logins performed, no settings left modified."
+  },
+  {
+   "key": "documents+drafts+compare-1",
+   "batch_notes": "Lean re-verification of batch documents+drafts+compare-1: 19 PASS, 1 BLOCKED (prepare-signed-reply, EXTERNAL-CREDS \u2014 clean 400 without email fixture chain, no 500/hang). One initial false alarm: export-pdf/preview and render-pages showed no fields for a 1-widget form PDF; source check confirmed has_form_fields requires >=3 non-signature widgets by design (src/pdf_forms.py:55), so a 3-field fixture was used and both endpoints matched the documented shape. All audit-tmp fixtures deleted (comparisons, [CMP] sessions, 4 docs); compare history left empty.",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/compare/history",
+     "status": "PASS",
+     "evidence": "GET after record fixture -> 200 JSON array len 1 with {id,prompt,model_a,model_b,winner,is_blind,voted_at,created_at}; empty [] after deletes."
+    },
+    {
+     "method": "POST",
+     "path": "/api/compare/record",
+     "status": "PASS",
+     "evidence": "JSON record -> 200 {status:ok,id:uuid}; missing winner -> 422."
+    },
+    {
+     "method": "POST",
+     "path": "/api/compare/start",
+     "status": "PASS",
+     "evidence": "Form POST (dead endpoint URL, no streaming) -> 200 {id,session_left,session_right,model_left,model_right,is_blind:true,mapping:{left,right}}; missing model_b -> 422. No LLM call made; [CMP] sessions deleted after."
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/compare/{comp_id}",
+     "status": "PASS",
+     "evidence": "DELETE fixture -> 200 {status:deleted}, history then []; unknown id -> 404 'Comparison not found'."
+    },
+    {
+     "method": "POST",
+     "path": "/api/compare/{comp_id}/vote",
+     "status": "PASS",
+     "evidence": "winner=left -> 200 {winner:'b',model_a,model_b,revealed:{left,right}}; winner=middle -> 400 \"winner must be 'left', 'right', or 'tie'\"; second vote -> 400 'Already voted'."
+    },
+    {
+     "method": "POST",
+     "path": "/api/document",
+     "status": "PASS",
+     "evidence": "JSON create -> 200 doc dict {id,title,language:markdown,version_count:1,is_active:true,archived:false}; nonexistent session_id -> 404 'Session not found'."
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/document/{doc_id}",
+     "status": "PASS",
+     "evidence": "DELETE -> 200 {status:deleted,id}; GET afterwards still returns row with is_active:false; unknown -> 404 'Document not found'."
+    },
+    {
+     "method": "GET",
+     "path": "/api/document/{doc_id}",
+     "status": "PASS",
+     "evidence": "GET -> 200 dict with id,session_id,title,language,current_content,version_count,is_active,archived,created_at,updated_at,source_email_* fields; unknown -> 404."
+    },
+    {
+     "method": "PATCH",
+     "path": "/api/document/{doc_id}",
+     "status": "PASS",
+     "evidence": "PATCH {title,language} -> 200 with 'audit-tmp Renamed'/'python'; unknown doc -> 404."
+    },
+    {
+     "method": "PUT",
+     "path": "/api/document/{doc_id}",
+     "status": "PASS",
+     "evidence": "PUT content -> 200, current_content updated, version_count stayed 1 (documented <60s coalesce; v1 summary became 'manual edit'); missing content -> 422; restore later proved versioning works."
+    },
+    {
+     "method": "POST",
+     "path": "/api/document/{doc_id}/archive",
+     "status": "PASS",
+     "evidence": "?archived=true -> 200 {ok:true,archived:true}; ?archived=false -> {ok:true,archived:false}; unknown doc -> 404."
+    },
+    {
+     "method": "GET",
+     "path": "/api/document/{doc_id}/export-pdf",
+     "status": "PASS",
+     "evidence": "PDF-backed doc -> 200 application/pdf, Content-Disposition attachment filename=\"audit-tmp-form_annotated.pdf\", valid 1-page PDF; markdown doc -> 400 'Document is not linked to a source PDF'."
+    },
+    {
+     "method": "POST",
+     "path": "/api/document/{doc_id}/export-pdf/preview",
+     "status": "PASS",
+     "evidence": "3-field AcroForm doc -> 200 {doc_id,upload_id,total:3,filled:0,unknown_fields:[],fields:[{name,label,type,options,page,value}]}; markdown doc -> 400; plain (non-form) PDF doc -> 404 'Field schema sidecar missing for source PDF'.",
+     "diagnosis": "Initial 404 with a 1-widget form was by-design: has_form_fields (src/pdf_forms.py:55) needs >=3 non-signature widgets to write the sidecar at import; not a regression."
+    },
+    {
+     "method": "POST",
+     "path": "/api/document/{doc_id}/extract-pdf-text",
+     "status": "PASS",
+     "evidence": "Text PDF doc -> 200 {ok:true,id,extracted:true,chars:66} (pure pypdf, no LLM); markdown doc -> 400 'Document is not a PDF \u2014 no pdf_source marker found'."
+    },
+    {
+     "method": "GET",
+     "path": "/api/document/{doc_id}/page/{page_no}.png",
+     "status": "PASS",
+     "evidence": "page/1.png -> 200 image/png, Cache-Control public,max-age=3600, valid 1190x1684 PNG; page/9999.png -> 404."
+    },
+    {
+     "method": "POST",
+     "path": "/api/document/{doc_id}/prepare-signed-reply",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "Happy path needs email-attachment doc + IMAP creds (unavailable); doc without source email -> clean 400 'Document has no source email \u2014 cannot reply', no 500/hang."
+    },
+    {
+     "method": "GET",
+     "path": "/api/document/{doc_id}/render-pages",
+     "status": "PASS",
+     "evidence": "Form doc -> 200 {doc_id,scale:2.0,pages:[{page:1,width:1190,height:1684,fields:[3 x {name,type,label,options,value,rect_px}]}]}; markdown doc -> 400."
+    },
+    {
+     "method": "GET",
+     "path": "/api/document/{doc_id}/render-pdf",
+     "status": "PASS",
+     "evidence": "PDF-backed doc -> 200 application/pdf, Content-Disposition inline, valid PDF bytes; markdown doc -> 400."
+    },
+    {
+     "method": "POST",
+     "path": "/api/document/{doc_id}/restore/{num}",
+     "status": "PASS",
+     "evidence": "restore/1 -> 200 doc dict, version_count 1->2, current_content equals v1; restore/999 -> 404 'Version not found'."
+    },
+    {
+     "method": "GET",
+     "path": "/api/document/{doc_id}/version/{num}",
+     "status": "PASS",
+     "evidence": "version/1 -> 200 {version_number:1,summary,source:'user',content,...}; version/999 -> 404 'Version not found'."
+    }
+   ]
+  },
+  {
+   "key": "documents+drafts+compare-2",
+   "batch_notes": "All 10 endpoints PASS, no regressions. Fixtures (session 87bb91d5, docs A/B, imported PDF doc, editor draft) created with audit-tmp prefix and deleted after. Two minor non-blocking observations: (1) two successive PUT edits to a doc coalesced into a single version row (versions list stayed at n=1, version_number 1 with latest content) \u2014 response shape exactly matched the documented {id, version_number, content, summary, source, created_at} keys so not treated as a deviation, but if a later batch expects version_number 2 after one PUT, the edits appear debounced/coalesced; (2) imported-PDF current_content page header rendered as 'age 1 text]:' (looks like a clipped '[Page 1 text]:' label) \u2014 cosmetic only, pdf_source marker and doc dict per plan. Library search showed 8 audit-tmp docs total, so other concurrent agents have live audit-tmp fixtures; I deleted only my own 3.",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/document/{doc_id}/versions",
+     "status": "PASS",
+     "evidence": "GET versions on edited owned doc -> 200 array of {id,version_number,content,summary,source,created_at}; unknown doc_id -> 200 []",
+     "reason": "Shape and bad_input behavior match test_plan"
+    },
+    {
+     "method": "POST",
+     "path": "/api/documents/export-zip",
+     "status": "PASS",
+     "evidence": "{ids:[2 owned]} -> 200 application/zip attachment documents.zip containing ['audit-tmp Doc A.md','audit-tmp Doc B.py']; {ids:[]} -> 400 'No documents specified'; unknown ids -> 404 'No documents found'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/documents/import-pdf",
+     "status": "PASS",
+     "evidence": "multipart plain-text PDF + owned session_id -> 200 doc dict (title from filename, current_content has pdf_source upload marker, version_count=1); missing file -> 422; bad session_id -> 404 'Session not found'",
+     "reason": "No LLM call triggered (plain text PDF, >50 chars extractable)"
+    },
+    {
+     "method": "GET",
+     "path": "/api/documents/library",
+     "status": "PASS",
+     "evidence": "?sort=recent&offset=0&limit=20&search=audit-tmp -> 200 {documents[{id,session_id,session_name,title,language,preview,version_count,created_at,updated_at}], total, languages, session_count}; limit=100 -> 422; offset=-1 -> 422"
+    },
+    {
+     "method": "GET",
+     "path": "/api/documents/{session_id}",
+     "status": "PASS",
+     "evidence": "GET owned session -> 200 array of 3 doc dicts newest-first; unknown session id -> 404 'Session not found'"
+    },
+    {
+     "method": "GET",
+     "path": "/api/editor-drafts",
+     "status": "PASS",
+     "evidence": "200 {drafts:[{id,name,source_image_id,width,height,thumbnail,created_at,updated_at}]} with payload omitted from summaries"
+    },
+    {
+     "method": "POST",
+     "path": "/api/editor-drafts",
+     "status": "PASS",
+     "evidence": "JSON {name,width,height,payload,thumbnail} -> 200 summary dict with generated uuid id and name echoed; body missing 'payload' -> 422"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/editor-drafts/{draft_id}",
+     "status": "PASS",
+     "evidence": "owned draft -> 200 {status:'deleted',id}; draft absent from subsequent GET list; unknown id -> 404 'Draft not found'"
+    },
+    {
+     "method": "GET",
+     "path": "/api/editor-drafts/{draft_id}",
+     "status": "PASS",
+     "evidence": "owned draft -> 200 summary fields plus payload:{layers:[]}; unknown id -> 404 'Draft not found'"
+    },
+    {
+     "method": "PUT",
+     "path": "/api/editor-drafts/{draft_id}",
+     "status": "PASS",
+     "evidence": "{name,payload} subset -> 200 summary with name='audit-tmp renamed' and updated_at bumped; unknown id -> 404 'Draft not found'"
+    }
+   ]
+  },
+  {
+   "key": "email-1",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/email/accounts",
+     "status": "PASS",
+     "evidence": "GET -> 200 {accounts:[...]} with id/name/is_default/enabled/imap_*/smtp_*/from_address/has_imap_password/has_smtp_password, passwords masked."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/accounts",
+     "status": "PASS",
+     "evidence": "POST full body -> 200 {ok:true,id:17f573a2...32hex}; missing name -> 200 {ok:false,error:\"name required\"}; fixture deleted after."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/accounts/test",
+     "status": "PASS",
+     "evidence": "POST {} -> 200 {ok:false,imap:{ok:false,error:\"Need IMAP host, username, and password\"},smtp:null} exactly per test_plan (live-server path unavailable, no mail server running)."
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/email/accounts/{account_id}",
+     "status": "PASS",
+     "evidence": "DELETE fixture id -> 200 {ok:true}, gone from GET list; unknown id -> 404 {detail:\"Account not found\"}."
+    },
+    {
+     "method": "PUT",
+     "path": "/api/email/accounts/{account_id}",
+     "status": "PASS",
+     "evidence": "PUT {name:\"audit-tmp-r3-renamed\"} -> 200 {ok:true,id}; rename verified via GET; unknown id -> 404 \"Account not found\"."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/accounts/{account_id}/set-default",
+     "status": "PASS",
+     "evidence": "POST on fixture -> 200 {ok:true}, is_default flipped in GET; unknown id -> 404; original default (a8c142b1) captured first and restored exactly."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/archive/{uid}",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "POST /archive/1?folder=INBOX -> 200 {success:false,error:\"Mail operation failed\"} (no live IMAP server; clean error, no 500/hang)."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/attachment-as-doc/{uid}/{index}",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "POST /attachment-as-doc/1/0?folder=INBOX -> 200 {error:\"Mail operation failed\"} (no live IMAP server)."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/attachment-path/{uid}/{index}",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "POST /attachment-path/1/0?folder=INBOX -> 200 {error:\"Mail operation failed\"} (no live IMAP server)."
+    },
+    {
+     "method": "GET",
+     "path": "/api/email/attachment/{uid}/{index}",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "GET /attachment/1/0?folder=INBOX -> 200 {error:\"Mail operation failed\"} (no live IMAP server)."
+    },
+    {
+     "method": "GET",
+     "path": "/api/email/attachments/{uid}",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "GET /attachments/1?folder=INBOX -> 200 {attachments:[],error:\"Mail operation failed\"} \u2014 matches documented error shape (no live IMAP server)."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/clear-answered/{uid}",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "POST /clear-answered/1?folder=INBOX -> 200 {success:false,error:\"Mail operation failed\"} (no live IMAP server)."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/compose-upload",
+     "status": "PASS",
+     "evidence": "multipart file -> 200 {success:true,token:\"<32hex>_audit-tmp-hello.txt\",filename,size:30}; missing 'file' field -> 422."
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/email/compose-upload/{token}",
+     "status": "PASS",
+     "evidence": "DELETE token -> 200 {success:true}; repeat DELETE also 200 {success:true} (idempotent per plan)."
+    },
+    {
+     "method": "GET",
+     "path": "/api/email/config",
+     "status": "PASS",
+     "evidence": "GET -> 200 with account_id/imap_host/imap_user/smtp_*/from_address, imap_password masked \"***\", all five email_auto_* booleans present."
+    },
+    {
+     "method": "PUT",
+     "path": "/api/email/config",
+     "status": "PASS",
+     "evidence": "PUT {email_auto_summarize:false} (same as prior value, captured via GET-first) -> 200 {success:true}; GET re-verified value and masked password unchanged."
+    },
+    {
+     "method": "GET",
+     "path": "/api/email/contacts",
+     "status": "PASS",
+     "evidence": "GET ?q=jo&limit=5 -> 200 {contacts:[]} (empty email_tags table); limit=abc -> 422 int_parsing per plan."
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/email/delete-permanent/{uid}",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "DELETE /delete-permanent/1?folder=INBOX -> 200 {success:false,error:\"Mail operation failed\"} (no live IMAP server)."
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/email/delete/{uid}",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "DELETE /delete/1?folder=INBOX -> 200 {success:false,error:\"Mail operation failed\"} (no live IMAP server)."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/draft",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "POST {to,subject,body} -> 200 {success:false,error:\"[Errno 61] Connection refused\"} \u2014 matches documented IMAP-error-as-200 shape (no live IMAP server)."
+    }
+   ],
+   "batch_notes": "No regressions in email-1. All NORMAL-class endpoints match test_plan shapes exactly (incl. 404 vs ok:false multi-user behavior \u2014 server is in multi-user mode, returns 404 {detail:\"Account not found\"} for unknown ids). All EXTERNAL-CREDS endpoints are BLOCKED no-creds-graceful: the configured default account points at 127.0.0.1:9991 which is connection-refused (test IMAP server from earlier passes not running), and every mail operation returns 200 with a clean error JSON \u2014 no 500s, no hangs, no tracebacks. State fully restored: my fixture account (17f573a2...) created, renamed, made default, then original default (a8c142b1...) restored and fixture deleted; compose token deleted; config flag PUT used the same prior value. Two pre-existing leftover accounts from earlier passes (audit-tmp-Renamed a8c142b1 default, audit-tmp-acct2 4efbe911) were present at batch start and left untouched since other batches' EXTERNAL-CREDS plumbing depends on the default account row; orchestrator may want a final-sweep cleanup of these audit-tmp rows after all batches complete."
+  },
+  {
+   "key": "email-2",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/email/folders",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "GET /api/email/folders -> 200 {\"folders\":[],\"error\":\"Mail operation failed\"} (exact documented no-IMAP shape); bad_input account_id=999999 -> 404 as documented."
+    },
+    {
+     "method": "GET",
+     "path": "/api/email/list",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "GET /api/email/list?folder=INBOX&limit=10&offset=0&filter=all -> 200 {\"emails\":[],\"total\":0,\"error\":\"Mail operation failed: [Errno 61] Connection refused\"} matching documented no-account body; folder=NoSuchFolder same clean 200 error (IMAP unreachable before folder check)."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/mark-answered/{uid}",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "POST /api/email/mark-answered/1?folder=INBOX -> 200 {\"success\":false,\"error\":\"Mail operation failed\"} (clean, no 500/hang)."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/mark-read/{uid}",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "POST /api/email/mark-read/1?folder=INBOX -> 200 {\"success\":false,\"error\":\"Mail operation failed\"} (clean)."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/mark-unread/{uid}",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "POST /api/email/mark-unread/1?folder=INBOX -> 200 {\"success\":false,\"error\":\"Mail operation failed\"} (clean)."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/move/{uid}",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "POST /api/email/move/1?folder=INBOX&dest=Archive -> 200 {\"success\":false,\"error\":\"Mail operation failed\"} (clean); missing dest -> 422 as documented."
+    },
+    {
+     "method": "GET",
+     "path": "/api/email/read/{uid}",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "GET /api/email/read/1?folder=INBOX&mark_seen=false -> 200 {\"error\":\"Mail operation failed\"} (clean)."
+    },
+    {
+     "method": "GET",
+     "path": "/api/email/resolve-contact",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "GET /api/email/resolve-contact?name=John -> 200 {\"contacts\":[],\"error\":\"Mail operation failed\"} (clean); missing name -> 422 as documented."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/schedule",
+     "status": "PASS",
+     "evidence": "POST {to:audit-tmp@example.com,send_at:2030-01-01T00:00:00Z} -> 200 {\"success\":true,\"id\":\"e66a994bd4604a58\",\"send_at\":\"2030-01-01T00:00:00Z\"}; past send_at -> 200 {\"success\":false,\"error\":\"send_at must be in the future\"}."
+    },
+    {
+     "method": "GET",
+     "path": "/api/email/scheduled",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"scheduled\":[{id,to,cc,subject,send_at,created_at,status:\"pending\",error}]} showing fixture row, then [] after delete."
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/email/scheduled/{sid}",
+     "status": "PASS",
+     "evidence": "DELETE /api/email/scheduled/e66a994bd4604a58 -> 200 {\"success\":true} and row removed from GET; unknown sid -> 200 {\"success\":true} as documented."
+    },
+    {
+     "method": "GET",
+     "path": "/api/email/search",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "q=invoice -> 200 {\"emails\":[],\"total\":0,\"error\":\"Mail operation failed\"} (clean); q=x (short) -> 200 {\"emails\":[],\"total\":0,\"query\":\"x\"} without IMAP as documented; CRLF q=a%0Ab -> 400 as documented."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/send",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "POST {to,subject,body,wait_for_delivery:true} -> 200 {\"success\":false,\"error\":\"No SMTP-capable email account configured\"} (exact documented no-SMTP shape); missing fields -> 422 Pydantic as documented."
+    },
+    {
+     "method": "GET",
+     "path": "/api/email/style",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"style\":\"\"} (and reflected \"Write tersely.\" after PUT)."
+    },
+    {
+     "method": "PUT",
+     "path": "/api/email/style",
+     "status": "PASS",
+     "evidence": "PUT {\"style\":\"Write tersely.\"} -> 200 {\"success\":true}, GET returned it; restored to original \"\" and confirmed."
+    },
+    {
+     "method": "GET",
+     "path": "/api/email/urgency-state",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"total_unread\":0,\"total_urgent\":0,\"max_score\":0,\"per_uid\":{}} (no-state-file default shape)."
+    },
+    {
+     "method": "POST",
+     "path": "/api/email/{uid}/unflag-spam",
+     "status": "PASS",
+     "evidence": "POST /api/email/12345/unflag-spam -> 200 {\"ok\":true} (no-row uid, pure SQLite update)."
+    }
+   ],
+   "batch_notes": "Batch email-2: 17 endpoints, no regressions. IMAP server unreachable on this host ([Errno 61] Connection refused) and no SMTP-capable account, so all 9 EXTERNAL-CREDS endpoints are BLOCKED no-creds-graceful \u2014 every one degraded with the exact clean 200-with-error-body shapes the test_plan documents, and all documented bad_input behaviors that do not need creds were verified (folders foreign account_id 404, move missing dest 422, resolve-contact missing name 422, search short-q bypass and CRLF 400, send missing fields 422). All 8 NORMAL endpoints PASS. Fixtures cleaned: scheduled email e66a994bd4604a58 deleted (verified gone), style restored to prior value \"\". No admin state touched, no logins performed, no LLM calls triggered."
+  },
+  {
+   "key": "gallery-1",
+   "results": [
+    {
+     "method": "POST",
+     "path": "/api/gallery/ai-tag-batch",
+     "status": "BLOCKED",
+     "evidence": "Request not sent: Claude Code permission classifier denied the curl twice citing rule 3, despite batch notes documenting it as a pure DB read.",
+     "reason": "harness-permission-denied (classifier flagged as llm-reserved; audit notes say no model call occurs)",
+     "diagnosis": "Not a server regression; endpoint untested this pass only due to tooling-level denial."
+    },
+    {
+     "method": "POST",
+     "path": "/api/gallery/ai-upscale",
+     "status": "BLOCKED",
+     "evidence": "multipart image+scale=2 -> 400 {detail:'No image generation endpoint configured. Add one in Settings \u2192 Add Models.'}; bad_input missing image -> 400 {'No image'}",
+     "reason": "no-creds-graceful (zero model_type='image' rows in model_endpoints; clean 400, no hang/500)"
+    },
+    {
+     "method": "GET",
+     "path": "/api/gallery/albums",
+     "status": "PASS",
+     "evidence": "GET -> 200 {albums:[{id,name,description,cover_url,count,created_at}]} listing audit-tmp-album"
+    },
+    {
+     "method": "POST",
+     "path": "/api/gallery/albums",
+     "status": "PASS",
+     "evidence": "POST name/description -> 200 {ok:true,id:uuid,name:'audit-tmp-album'}; bad_input {} -> 400 'Album name required'"
+    },
+    {
+     "method": "PUT",
+     "path": "/api/gallery/albums/{album_id}",
+     "status": "PASS",
+     "evidence": "PUT name+description+cover_id -> 200 {ok:true}; unknown album_id -> 404 'Album not found'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/gallery/albums/{album_id}/add",
+     "status": "PASS",
+     "evidence": "POST {image_ids:[img]} -> 200 {ok:true,count:1}; unknown album -> 404 'Album not found'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/gallery/albums/{album_id}/remove",
+     "status": "PASS",
+     "evidence": "POST {image_ids:[img]} -> 200 {ok:true}; unknown album -> 404 'Album not found'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/gallery/dedupe-tags",
+     "status": "PASS",
+     "evidence": "POST -> 200 {ok:true,rows_touched:0,tags_removed:0} (no ai_tags overlap fixture; zero-overlap path per test_plan)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/gallery/download-zip",
+     "status": "PASS",
+     "evidence": "POST {ids:[img]} -> 200, Content-Type application/zip, Content-Disposition attachment filename=\"gallery-photos.zip\", entry 'audit-tmp Beach day.png' (named from prompt); bad_input ids:[] -> 400 'No images specified'"
+    },
+    {
+     "method": "GET",
+     "path": "/api/gallery/library",
+     "status": "PASS",
+     "evidence": "?offset=0&limit=24&sort=recent -> 200 keys {items,models,tags,total,total_tagged}, item dict has id/filename/url/prompt/tags/ai_tags/favorite/width/height; bad_input ?limit=0 -> 422"
+    },
+    {
+     "method": "GET",
+     "path": "/api/gallery/stats",
+     "status": "PASS",
+     "evidence": "GET -> 200 {total_photos:2,total_size:143,total_size_human:'143.0 B',favorites:0,albums:1}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/gallery/style-transfer",
+     "status": "BLOCKED",
+     "evidence": "multipart image+prompt+strength -> 400 {'No image generation endpoint configured.'}; bad_input missing image -> 400 {'No image'}",
+     "reason": "no-creds-graceful (no image endpoint configured; clean 400)"
+    },
+    {
+     "method": "GET",
+     "path": "/api/gallery/tags",
+     "status": "PASS",
+     "evidence": "GET -> 200 {tags:[]} (queried before user tags were set; sorted-list shape correct)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/gallery/upload",
+     "status": "PASS",
+     "evidence": "multipart file=audit-tmp.png -> 200 {ok:true,filename:'e3b64a2bf36a.png',id:uuid}; bad_input .txt -> 400 'Unsupported file type: .txt'"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/gallery/{image_id}",
+     "status": "PASS",
+     "evidence": "DELETE -> 200 {status:'deleted',id}; GET afterward still 200 (soft-delete), file gone from data/generated_images/; unknown id -> 404 'Image not found'"
+    },
+    {
+     "method": "GET",
+     "path": "/api/gallery/{image_id}",
+     "status": "PASS",
+     "evidence": "GET -> 200 {id,filename,url:'/api/generated-image/<fn>',prompt,tags,ai_tags,favorite,width:4,height:4,created_at,...}; (404-for-unknown shown via favorite/delete bad cases on same handler family)"
+    },
+    {
+     "method": "PATCH",
+     "path": "/api/gallery/{image_id}",
+     "status": "PASS",
+     "evidence": "PATCH {favorite:true,tags:'audit-tmp-beach, audit-tmp-sunset'} -> 200 full dict with updated tags/favorite; {favorite:'notabool'} -> 422 bool_parsing",
+     "diagnosis": "Documented bad_input value 'yes' returns 200, not 422 \u2014 pydantic v2 lax mode coerces 'yes' to True. Validation itself intact (non-coercible string -> 422). Test plan example value should be updated; not a regression."
+    },
+    {
+     "method": "POST",
+     "path": "/api/gallery/{image_id}/favorite",
+     "status": "PASS",
+     "evidence": "POST (no body) -> 200 {ok:true,favorite:false} (toggled off the PATCH-set true, confirming toggle semantics); unknown id -> 404 'Image not found'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/gallery/{image_id}/rename",
+     "status": "PASS",
+     "evidence": "POST {name:'audit-tmp Beach day'} -> 200 {ok:true,name:'audit-tmp Beach day'}; bad_input {name:''} -> 400 'Name cannot be empty'"
+    }
+   ],
+   "batch_notes": "gallery-1 lean re-verification: 17 PASS, 3 BLOCKED, 0 FAIL \u2014 no regressions. Fixtures (audit-tmp image 3d4f74d2..., album da1d2b2e...) created and deleted via the endpoints under test; temp files removed. BLOCKED details: ai-upscale and style-transfer are no-creds-graceful (no model_type='image' row in model_endpoints, confirmed via sqlite on /Users/clawdio/odysseus/data/app.db; both return clean 400s and their documented bad_input 400 'No image' paths pass). ai-tag-batch was denied twice by the Claude Code permission classifier as 'llm-reserved' even though the batch notes document it as a pure DB read that never calls a model \u2014 I did not bypass the denial; recommend the orchestrator either allowlist that curl or accept prior-pass results for it. One test-plan nit: PATCH /api/gallery/{id} bad_input example {\"favorite\":\"yes\"} actually coerces to True under pydantic v2 lax bool parsing (200); a non-coercible value ('notabool') yields the expected 422, so validation is intact \u2014 suggest updating the documented example value."
+  },
+  {
+   "key": "gallery-2",
+   "results": [
+    {
+     "method": "POST",
+     "path": "/api/gallery/{image_id}/replace",
+     "status": "PASS",
+     "evidence": "multipart image=@48x48.png on owned fixture -> 200 {\"ok\":true,\"width\":48,\"height\":48}; no 'image' field -> 400 'No image provided'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/gallery/{image_id}/rotate",
+     "status": "PASS",
+     "evidence": "{\"angle\":90} on 64x32 fixture -> 200 {\"ok\":true,\"width\":32,\"height\":64} (dims swapped); {\"angle\":45} -> 400 'Angle must be 90, -90, 180, or 270'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/image/enhance-face",
+     "status": "PASS",
+     "evidence": "{\"image\":\"<b64 png>\"} -> 200 {\"image\":\"<b64 PNG>\",\"method\":\"pil\"} (GFPGAN absent, PIL fallback); {} -> 400 'No image provided'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/image/harmonize",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful (happy-path request also denied by sandbox classifier as llm-reserved)",
+     "evidence": "{} -> 400 'No image provided' (clean validation); no diffusion ModelEndpoint configured on instance, generative request not sent",
+     "diagnosis": "No diffusion server available; inpaint probe confirms instance has no image endpoint configured, so harmonize would fail the same graceful 400 path. Bad-input contract verified intact."
+    },
+    {
+     "method": "POST",
+     "path": "/api/image/inpaint",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "{} (no _endpoint, no image) -> 400 'No image generation endpoint configured. Serve a diffusion model via Cookbook first.' \u2014 clean documented error, no 500/hang",
+     "diagnosis": "No image ModelEndpoint configured and no diffusion server creds; full inpaint request additionally denied by sandbox classifier (llm-reserved). Graceful no-endpoint 400 matches test_plan exactly."
+    },
+    {
+     "method": "POST",
+     "path": "/api/image/sharpen",
+     "status": "PASS",
+     "evidence": "{\"image\":\"<b64 png>\",\"amount\":50} -> 200 {\"image\":\"iVBORw0KGgo...\"} (b64 PNG); bad-input 500 not re-probed (documented unhandled path, lean pass)"
+    }
+   ],
+   "batch_notes": "gallery-2 re-verification: 4 PASS, 2 BLOCKED (EXTERNAL-CREDS, both graceful). Fixture flow: uploaded audit-tmp PNG via /api/gallery/upload (id a547e483), rotated, replaced, then DELETE /api/gallery/{id} -> 200 deleted; /tmp fixtures removed. No regressions observed. Note: sandbox auto-mode classifier denies sending prompt-bearing requests to /api/image/harmonize and /api/image/inpaint (treated as generative calls), so EXTERNAL-CREDS happy paths were verified only via their clean validation/no-endpoint 400s \u2014 consistent with prior passes."
+  },
+  {
+   "key": "mcp+shell+diag+internal",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/cookbook/packages",
+     "status": "PASS",
+     "evidence": "GET (admin) -> 200 {packages:[...]} each name/pip/desc/category/target/installed; docker row has applicable+install_hint. Bad: ssh_port=abc->400 'Invalid ssh_port', venv=$(id)->400 'invalid venv path', sec-fetch-site cross-site->403 'Cross-site request rejected'."
+    },
+    {
+     "method": "GET",
+     "path": "/api/db/stats",
+     "status": "PASS",
+     "evidence": "GET (admin) -> 200 stats obj {total_sessions:0,total_messages:10,database_size_mb:0.54,...}. Non-admin 403 not re-tested (no non-admin session in budget)."
+    },
+    {
+     "method": "POST",
+     "path": "/api/internal/agent_tool",
+     "status": "PASS",
+     "evidence": "POST {tool:bash,args:{command:echo internal-ok}} + X-Odysseus-Internal-Token + X-Odysseus-Owner:admin -> 200 {ok:true,result:{output:'internal-ok',exit_code:0}}. Bad: unknown tool->200 {ok:false,'Unknown or invalid tool: nope'}, wrong token->403 'forbidden', non-json->400 'invalid json body', no tool->400 'tool required'."
+    },
+    {
+     "method": "GET",
+     "path": "/api/mcp/oauth/authorize/{server_id}",
+     "status": "PASS",
+     "evidence": "Error paths (only ones testable w/o Google creds): no-oauth server->400 'Server has no OAuth config', unknown id->404 'Server not found'. Redirect/paste-back branch requires real client-secrets (not exercised)."
+    },
+    {
+     "method": "GET",
+     "path": "/api/mcp/oauth/callback",
+     "status": "PASS",
+     "evidence": "code=fake&state=<oauth_srv> -> 400 HTML 'Authorization Failed' (graceful Google reject); state=unknown->404 HTML 'Server not found'; missing code/state->422."
+    },
+    {
+     "method": "POST",
+     "path": "/api/mcp/oauth/exchange/{server_id}",
+     "status": "PASS",
+     "evidence": "callback_url=...?code=fake -> 400 HTML 'Authorization Failed'; callback_url w/o code= -> 400 HTML 'No authorization code'; missing callback_url->422."
+    },
+    {
+     "method": "GET",
+     "path": "/api/mcp/servers",
+     "status": "PASS",
+     "evidence": "GET (admin) -> 200 JSON array; entries have id/name/transport/command/args/env/url/is_enabled/status/tool_count/has_oauth/needs_oauth/error."
+    },
+    {
+     "method": "POST",
+     "path": "/api/mcp/servers",
+     "status": "PASS",
+     "evidence": "POST stdio name=audit-tmp-revfix command=echo args=[\"hi\"] -> 200 {id:bc239d85,connected:false,status:'error',tool_count:0,error:'Connection closed',needs_oauth:false}. Bad: stdio no command->400, sse no url->400. NOTE: first attempt returned 'Internal Server Error' (intermittent async-teardown race in mcp stdio client, 'Attempted to exit cancel scope in a different task'); deterministic retry matched documented shape."
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/mcp/servers/{server_id}",
+     "status": "PASS",
+     "evidence": "DELETE fixture bc239d85 -> 200 {status:'deleted'}; unknown id->404 'Server not found'."
+    },
+    {
+     "method": "PATCH",
+     "path": "/api/mcp/servers/{server_id}",
+     "status": "PASS",
+     "evidence": "is_enabled=false->200 {id,is_enabled:false}; =true->200 {is_enabled:true}; missing field->422; unknown id->404."
+    },
+    {
+     "method": "POST",
+     "path": "/api/mcp/servers/{server_id}/reconnect",
+     "status": "PASS",
+     "evidence": "POST -> 200 {connected:false,status:'error',tool_count:0,error:'Connection closed'}; unknown id->404 'Server not found'."
+    },
+    {
+     "method": "GET",
+     "path": "/api/mcp/servers/{server_id}/tools",
+     "status": "PASS",
+     "evidence": "GET -> 200 [] (dummy/disconnected); unknown id->404 'Server not found'."
+    },
+    {
+     "method": "PATCH",
+     "path": "/api/mcp/servers/{server_id}/tools",
+     "status": "PASS",
+     "evidence": "{disabled:[some_tool]}->200 {disabled_count:1}; {disabled:[]}->200 {disabled_count:0}; {disabled:'not-a-list'}->400 'disabled must be a list of tool names'."
+    },
+    {
+     "method": "GET",
+     "path": "/api/mcp/tools",
+     "status": "PASS",
+     "evidence": "GET (admin) -> 200 array of built-in tools (memory/rag/image_gen/email...) each name/qualified_name/server_id/is_disabled."
+    },
+    {
+     "method": "GET",
+     "path": "/api/rag/stats",
+     "status": "PASS",
+     "evidence": "GET (admin) -> 200 {document_count:0,embedding_model:'...all-MiniLM-L6-v2',persist_directory:...,collection_name:'odysseus_rag',healthy:true}."
+    },
+    {
+     "method": "POST",
+     "path": "/api/shell/exec",
+     "status": "PASS",
+     "evidence": "echo hello->200 {stdout:'hello\\n',stderr:'',exit_code:0}; false->exit_code:1; whitespace cmd->{stderr:'No command provided',exit_code:1}; missing command->422."
+    },
+    {
+     "method": "POST",
+     "path": "/api/shell/stream",
+     "status": "PASS",
+     "evidence": "SSE 'echo one; echo two' -> data:{stream:stdout,data:one}, {data:two}, {exit_code:0}; empty cmd -> data:{stream:stderr,data:'No command provided'} then {exit_code:1}."
+    },
+    {
+     "method": "GET",
+     "path": "/api/test/youtube",
+     "status": "PASS",
+     "evidence": "url=...watch?v=dQw4w9WgXcQ -> 200 {video_id:'dQw4w9WgXcQ',transcript_success:true,transcript_length:2089,transcript_preview:'...'}; url=not-a-youtube-link->200 {error:'Invalid YouTube URL'}."
+    }
+   ],
+   "batch_notes": "Batch 'mcp+shell+diag+internal': all 18 endpoints PASS, no regressions vs documented test_plan. Two notes for the orchestrator:\n\n1) POST /api/mcp/servers \u2014 INTERMITTENT 500. First create attempt returned plain 'Internal Server Error'; app.log shows a non-deterministic async-teardown race in the third-party mcp stdio client (pydantic JSONRPC parse of 'hi' fails -> Connection closed -> 'RuntimeError: Attempted to exit cancel scope in a different task than it was entered in', Task exception never retrieved). Immediate retry returned 200 with the exact documented shape (id/connected:false/status:error/tool_count:0/error:'Connection closed'/needs_oauth:false). Treated as flaky teardown in the mcp lib, not a deterministic app regression \u2014 but flagging since the happy path can sporadically 500 on connection-failing stdio servers.\n\n2) agent_tool nuance: default attribution (no X-Odysseus-Owner) yields 200 {ok:true, result:{error:'Tool bash is restricted to admin users...',exit_code:1}} because current_user='internal-tool' is non-admin. Adding documented optional header X-Odysseus-Owner:admin produced the expected {ok:true,result:{output:'internal-ok'}}. Endpoint behaves per docs.\n\nCleanup: my fixture audit-tmp-revfix (bc239d85) created and deleted (200). Three pre-existing audit-tmp fixtures from prior passes (bc1bce1c audit-tmp-echo, 08543447 audit-tmp-oauthA, 5bcfa0e2 audit-tmp-oauthB) remain \u2014 DELETE was blocked by the auto-mode classifier because they were not created in this session. They are harmless and predate this run; orchestrator may clean them. I reused 08543447 (has oauth_config) for the OAuth callback/exchange/authorize error-path smoke tests.\n\nAuth-based bad_input cases documented as 'non-admin -> 403' (db/stats, mcp/tools, rag/stats, shell/exec) were NOT re-tested to preserve the single shared login budget (rate limit 15/min/IP); param/body/header-based bad inputs were all verified. No LLM calls triggered; no settings mutated; admin account untouched."
+  },
+  {
+   "key": "memory+notes+personal-1",
+   "batch_notes": "Lean re-verification of batch 'memory+notes+personal-1' (20 endpoints): all PASS, no regressions. Reused pre-existing session 30ccff58 (audit-tmp-chat, owned by session-routes batch) for by-session test. fire-reminder confirmed safe before firing: /api/settings has zero reminder_* keys so defaults apply (browser channel, no LLM synthesis) \u2014 browser_sent:true, synthesis:null, no email/ntfy. Cleaned all fixtures: 2 audit-tmp memories + 1 leftover audit-tmp memory from a prior pass (f0279e9a) deleted, both audit-tmp notes deleted; final state notes=[] (active+archived) and 0 audit-tmp memories. No source reads needed; no logins performed.",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/memory",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"memory\":[{id,text,timestamp,source,category,uses,owner}...]}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/memory/add",
+     "status": "PASS",
+     "evidence": "JSON {text,category,source} -> 200 {\"ok\":true,\"count\":3}; {\"text\":\" \"} -> 400 \"empty memory\"; {\"text\":\"\"} -> 422 string_too_short"
+    },
+    {
+     "method": "GET",
+     "path": "/api/memory/by-session/{session_id}",
+     "status": "PASS",
+     "evidence": "add w/ session_id then GET -> 200 {session_id,session_name:\"audit-tmp-chat\",memory_count:1,memories:[...]}; nonexistent-id -> 404 \"Session ... not found\""
+    },
+    {
+     "method": "POST",
+     "path": "/api/memory/debug",
+     "status": "PASS",
+     "evidence": "form query=coffee -> 200 {query,total_memories:3,relevant_count:2,relevant_memories:[{text,category}]}; missing query -> 422"
+    },
+    {
+     "method": "POST",
+     "path": "/api/memory/search",
+     "status": "PASS",
+     "evidence": "form query=coffee&category=preference -> 200 {\"memories\":[...],...}; missing query -> 422"
+    },
+    {
+     "method": "GET",
+     "path": "/api/memory/timeline",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"timeline\":[{...,\"timestamp_str\":...}],...} newest-first"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/memory/{memory_id}",
+     "status": "PASS",
+     "evidence": "DELETE fixture id -> 200 {\"ok\":true,\"message\":\"Memory deleted successfully\"}; GET after -> 404; unknown id -> 404 \"Memory item ... not found\""
+    },
+    {
+     "method": "GET",
+     "path": "/api/memory/{memory_id}",
+     "status": "PASS",
+     "evidence": "GET fixture id -> 200 {\"memory\":{id,text,category,...}}; does-not-exist -> 404 \"Memory not found\""
+    },
+    {
+     "method": "PUT",
+     "path": "/api/memory/{memory_id}",
+     "status": "PASS",
+     "evidence": "form text=...&category=fact -> 200 {\"ok\":true,\"message\":\"Memory updated successfully\"}; missing text -> 422"
+    },
+    {
+     "method": "POST",
+     "path": "/api/memory/{memory_id}/pin",
+     "status": "PASS",
+     "evidence": "form pinned=true -> 200 {\"ok\":true,\"pinned\":true}; unknown id -> 404 \"Memory item nope not found\""
+    },
+    {
+     "method": "GET",
+     "path": "/api/notes",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"notes\":[]}; ?archived=true returned archived fixture only; default list excluded it"
+    },
+    {
+     "method": "POST",
+     "path": "/api/notes",
+     "status": "PASS",
+     "evidence": "checklist JSON -> 200 full note dict with uuid id, owner:\"admin\", items; {\"items\":\"not-a-list\"} -> 422 list_type"
+    },
+    {
+     "method": "POST",
+     "path": "/api/notes/fire-reminder",
+     "status": "PASS",
+     "evidence": "defaults verified safe first (no reminder_* settings); JSON {note_id,title,body} -> 200 {synthesis:null,email_sent:false,...,browser_sent:true}; no note_id -> 400 \"note_id required\"; anon -> 401 \"Not authenticated\""
+    },
+    {
+     "method": "POST",
+     "path": "/api/notes/reorder",
+     "status": "PASS",
+     "evidence": "{\"ids\":[B,A]} -> 200 {\"ok\":true,\"count\":2}, sort_order B=0/A=1 confirmed (A listed first only because pinned); {\"ids\":\"not-a-list\"} -> 400 \"ids must be a list\""
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/notes/{note_id}",
+     "status": "PASS",
+     "evidence": "DELETE fixture -> 200 {\"ok\":true}; GET after -> 404; unknown id -> 404 \"Note not found\""
+    },
+    {
+     "method": "GET",
+     "path": "/api/notes/{note_id}",
+     "status": "PASS",
+     "evidence": "GET fixture id -> 200 note dict (id,owner,title,content,items,...); unknown -> 404 \"Note not found\""
+    },
+    {
+     "method": "PUT",
+     "path": "/api/notes/{note_id}",
+     "status": "PASS",
+     "evidence": "JSON {title,pinned:true} -> 200 updated note dict; unknown id -> 404 \"Note not found\""
+    },
+    {
+     "method": "POST",
+     "path": "/api/notes/{note_id}/archive",
+     "status": "PASS",
+     "evidence": "POST empty -> 200 {\"ok\":true,\"archived\":true}, note moved to ?archived=true list; unknown -> 404"
+    },
+    {
+     "method": "POST",
+     "path": "/api/notes/{note_id}/items/{index}/toggle",
+     "status": "PASS",
+     "evidence": "/items/0/toggle -> 200 {\"ok\":true,\"items\":[{Milk,done:true},...]}; /items/99 -> 400 \"Item index 99 out of range\"; no-items note -> 400 \"Note has no checklist items\""
+    },
+    {
+     "method": "POST",
+     "path": "/api/notes/{note_id}/pin",
+     "status": "PASS",
+     "evidence": "POST empty -> 200 {\"ok\":true,\"pinned\":true}; second call -> {\"pinned\":false}; unknown -> 404 \"Note not found\""
+    }
+   ]
+  },
+  {
+   "key": "memory+notes+personal-2",
+   "batch_notes": "Lean re-verification of batch 'memory+notes+personal-2' (6 endpoints): all PASS, no regressions. RAG/ChromaDB reachable (indexing worked). Fixtures (audit-tmp-docs dir, audit-tmp-upload.txt) created and fully cleaned; final reload restored baseline count=2 and listing contains no audit-tmp entries.",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/personal",
+     "status": "PASS",
+     "evidence": "GET with admin cookie -> 200 {\"files\":[{name,size,path}x2],\"directories\":[]} matching documented shape."
+    },
+    {
+     "method": "POST",
+     "path": "/api/personal/add_directory",
+     "status": "PASS",
+     "evidence": "POST {\"directory\":\"audit-tmp-docs\"} -> 200 {success:true,indexed_count:1,failed_count:0,directory:/abs/path}; bad_input {\"directory\":\"/etc\"} -> 403 \"Directory must be inside personal documents\"."
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/personal/file",
+     "status": "PASS",
+     "evidence": "DELETE ?filepath=/Users/clawdio/odysseus/data/personal_uploads/admin/audit-tmp-upload-db4f5ced33.txt -> 200 {success:true,removed_chunks:1,deleted_from_disk:true}; omitted filepath -> 422 missing-field."
+    },
+    {
+     "method": "POST",
+     "path": "/api/personal/reload",
+     "status": "PASS",
+     "evidence": "POST empty body -> 200 {\"ok\":true,\"count\":3} (and {\"ok\":true,\"count\":2} after fixture cleanup)."
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/personal/remove_directory",
+     "status": "PASS",
+     "evidence": "DELETE ?directory=/abs/.../audit-tmp-docs -> 200 {success:true,message:\"Successfully removed ... from RAG index\"}; omitted directory -> 422 missing-field."
+    },
+    {
+     "method": "POST",
+     "path": "/api/personal/upload",
+     "status": "PASS",
+     "evidence": "POST multipart files=@audit-tmp-upload.txt -> 200 {success:true,uploaded:[\"audit-tmp-upload.txt\"],indexed_count:1,failed_count:0}; file stored uuid-suffixed under data/personal_uploads/admin/."
+    }
+   ]
+  },
+  {
+   "key": "models+prefs+presets-1",
+   "batch_notes": "Lean re-verification of batch models+prefs+presets-1: 20/20 PASS, no regressions. One login used (throwaway audit-tmp-mp1, created then deleted; cookie file removed). Fixture endpoint 5a8894aa (audit-tmp-ep) created with skip_probe and deleted; custom preset and group presets snapshotted and restored byte-identical; global default_endpoint_id untouched (was already set to claude-cli-sidecar). Leftover observations: (1) stale user 'audit-tmp-auth1' from a prior pass cannot be removed \u2014 DELETE /api/auth/users returns 403 'Cannot delete user' for it; (2) deleted user audit-tmp-mp1 may leave an orphan key in data/user_prefs.json (no prefs-delete route); (3) on the dedupe re-POST of /api/model-endpoints the existing-row response reported online:true/status:online for a dead URL (stale derived status; doc only requires existing:true so not flagged); (4) empty form value base_url= coerces to 422 'Field required' \u2014 the documented 400 'Base URL is required' fires for whitespace-only values (consistent with docs: omit\u2192422, present-but-empty\u2192400).",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/default-chat",
+     "status": "PASS",
+     "evidence": "GET as admin -> 200 {endpoint_id:claude-cli-sidecar, endpoint_url:http://127.0.0.1:8750/v1/chat/completions, model:claude-sonnet-4-6}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/discover",
+     "status": "PASS",
+     "evidence": "GET admin -> 200 {hosts:[localhost,host.docker.internal], items:[ollama:11434 models...]}; non-admin -> 403 Admin only"
+    },
+    {
+     "method": "GET",
+     "path": "/api/model-endpoints",
+     "status": "PASS",
+     "evidence": "GET admin -> 200 array with full shape (id/name/base_url/has_key/is_enabled/models/hidden_count/online/status/ping_error/model_type/supports_tools) incl. fixture; non-admin -> 403"
+    },
+    {
+     "method": "POST",
+     "path": "/api/model-endpoints",
+     "status": "PASS",
+     "evidence": "Form create (skip_probe,shared) -> 200 {id:5a8894aa,...status:offline}; re-POST -> existing:true; base_url missing/empty -> 422, whitespace -> 400 'Base URL is required'"
+    },
+    {
+     "method": "GET",
+     "path": "/api/model-endpoints/probe-local",
+     "status": "PASS",
+     "evidence": "GET admin -> 200 {claude-cli-sidecar:{alive:true,latency_ms:10,status_code:200,error:null}}; non-admin -> 403"
+    },
+    {
+     "method": "POST",
+     "path": "/api/model-endpoints/test",
+     "status": "PASS",
+     "evidence": "Form base_url=dead URL -> 200 {online:false,status:offline,ping_error:'Connection refused',models:[],count:0}; empty -> 422/whitespace -> 400"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/model-endpoints/{ep_id}",
+     "status": "PASS",
+     "evidence": "DELETE fixture -> 200 {deleted:true,cleared_settings:[],cleared_sessions:0,cleared_loaded_sessions:0}; repeat -> 404; id absent from list"
+    },
+    {
+     "method": "PATCH",
+     "path": "/api/model-endpoints/{ep_id}",
+     "status": "PASS",
+     "evidence": "No-body PATCH flipped is_enabled true->false; JSON PATCH applied name/is_enabled/supports_tools -> 200; unknown id -> 404 Endpoint not found"
+    },
+    {
+     "method": "GET",
+     "path": "/api/model-endpoints/{ep_id}/dependents",
+     "status": "PASS",
+     "evidence": "GET fixture -> 200 {dependents:[]}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/model-endpoints/{ep_id}/models",
+     "status": "PASS",
+     "evidence": "GET offline fixture (no cache) -> 200 []; unknown id -> 404 Endpoint not found"
+    },
+    {
+     "method": "PATCH",
+     "path": "/api/model-endpoints/{ep_id}/models",
+     "status": "PASS",
+     "evidence": "{hidden:[fake-model-x]} -> 200 {id,hidden_count:1}; {hidden:'not-a-list'} -> 400 'hidden must be a list of model IDs'"
+    },
+    {
+     "method": "GET",
+     "path": "/api/models",
+     "status": "PASS",
+     "evidence": "GET ?refresh=true admin -> 200 {hosts:[],items:[{url,models,models_display,endpoint_id:claude-cli-sidecar,category:local,...}]}; anonymous -> 401 {error:Not authenticated}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/ping",
+     "status": "PASS",
+     "evidence": "GET admin -> 200 {endpoints:[{id:claude-cli-sidecar,provider:openai,category:local,latency_ms:6,status:online,model_count:3}]}; non-admin -> 403"
+    },
+    {
+     "method": "GET",
+     "path": "/api/prefs",
+     "status": "PASS",
+     "evidence": "GET fresh user -> 200 {}; after PUT -> 200 {audit-tmp-key:dark}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/prefs/{key}",
+     "status": "PASS",
+     "evidence": "GET set key -> 200 {key,value:dark}; unset key -> 200 {key,value:null} (no 404)"
+    },
+    {
+     "method": "PUT",
+     "path": "/api/prefs/{key}",
+     "status": "PASS",
+     "evidence": "PUT {value:dark} -> 200 round-trip; non-object body '\"dark\"' -> 422 dict_type"
+    },
+    {
+     "method": "GET",
+     "path": "/api/presets",
+     "status": "PASS",
+     "evidence": "GET user session -> 200 JSON object of preset definitions (code_analyze, custom, ...)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/presets/custom",
+     "status": "PASS",
+     "evidence": "POST full body -> 200 {success:true,message:'Custom preset updated'}; temperature 3.0 -> 422 le=2.0; prior values restored and verified"
+    },
+    {
+     "method": "GET",
+     "path": "/api/presets/groups",
+     "status": "PASS",
+     "evidence": "GET -> 200 {groups:[]} initially; returned saved group after POST"
+    },
+    {
+     "method": "POST",
+     "path": "/api/presets/groups",
+     "status": "PASS",
+     "evidence": "POST {groups:[{name:audit-tmp-trio,members:[a,b]}]} -> 200 {ok:true}, round-tripped via GET; non-JSON body -> 400 'Invalid JSON body'; restored to []"
+    }
+   ]
+  },
+  {
+   "key": "models+prefs+presets-2",
+   "batch_notes": "All 6 endpoints re-verified, no regressions. Fixtures cleaned: audit-tmp template deleted; disabled_tools restored to exact prior value []. One documentation correction: DELETE /api/presets/templates/{id} with an unknown id returns {\"success\":true} (idempotent), not the documented {\"success\":false,\"message\":\"Failed to delete template\"} \u2014 source (/Users/clawdio/odysseus/src/preset_manager.py:159-163) shows the handler returns save() result after filtering, so success:false only occurs on a save failure. Behavior is by design, not a regression; the batch bad_input field should be updated.",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/presets/templates",
+     "status": "PASS",
+     "evidence": "GET -> 200 [] initially; after POST fixture, 200 [{\"id\":\"user-48ff7d94\",\"name\":\"audit-tmp-bot\",...}]"
+    },
+    {
+     "method": "POST",
+     "path": "/api/presets/templates",
+     "status": "PASS",
+     "evidence": "POST {id:\"\",name:\"audit-tmp-bot\",...} -> 200 {\"success\":true,\"template\":{\"id\":\"user-48ff7d94\",...}}; bad_input {\"name\":\"\"} -> 422"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/presets/templates/{template_id}",
+     "status": "PASS",
+     "evidence": "DELETE user-48ff7d94 -> 200 {\"success\":true}, verified gone from GET; unknown id user-deadbeef -> 200 {\"success\":true} (idempotent)",
+     "diagnosis": "Documented bad_input expectation (success:false for unknown id) does not match implementation: preset_manager.delete_user_template filters the list and returns save() result, so unknown ids succeed. Benign idempotent delete, not a regression.",
+     "reason": "Happy path and shape match; only the doc's bad_input note is stale."
+    },
+    {
+     "method": "GET",
+     "path": "/api/providers",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"providers\":[{\"provider\":\"vllm\",\"hosts\":[\"localhost\",...],\"items\":[{host,port,url,models[...]}]}]}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/tools",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"tools\":[{\"id\":\"adopt_served_model\",\"enabled\":true},...]} sorted by tag"
+    },
+    {
+     "method": "POST",
+     "path": "/api/tools",
+     "status": "PASS",
+     "evidence": "POST {\"disabled\":[\"web_search\"]} -> 200 {\"ok\":true,\"disabled\":[\"web_search\"]}, GET showed web_search enabled:false; bad_input string -> 422; restored to [] and verified"
+    }
+   ]
+  },
+  {
+   "key": "research+search",
+   "batch_notes": "Lean re-verification pass of batch 'research+search' (17 endpoints): all PASS, no regressions. Used two disk fixtures (audit-tmp-ra/rb in data/deep_research/) owned by admin; no LLM calls triggered (cancel tested via disk-only fixture per documented {\"cancelled\":false} behavior instead of starting a live research). Spinoff created chat session 332c8704-6fbf-4326-856a-0cc68b8a2eb6, deleted afterwards via DELETE /api/session/{id} (note: /api/sessions/{id} is not a route). Search provider chain live: searxng configured (localhost:8080) and duckduckgo both available; /api/search happy path returned real results with no error key. All fixtures cleaned up (deep_research dir has no audit-tmp files remaining). Known prior audit flag still applies: spinoff has no ownership check (login-only), unchanged.",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/research/active",
+     "status": "PASS",
+     "evidence": "GET w/ cookie -> 200 {\"active\":[]}; no cookie -> 401 {\"error\":\"Not authenticated\"}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/research/cancel/{session_id}",
+     "status": "PASS",
+     "evidence": "POST cancel/audit-tmp-ra (disk-only fixture) -> 200 {\"cancelled\":false} as documented; unknown sid -> 404 {\"detail\":\"No research found for this session\"}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/research/detail/{session_id}",
+     "status": "PASS",
+     "evidence": "GET detail/audit-tmp-ra -> 200 raw JSON (owner, query, result, sources); unknown sid -> 404 {\"detail\":\"Research not found\"}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/research/library",
+     "status": "PASS",
+     "evidence": "GET ?sort=recent&limit=50&archived=false -> 200 {\"research\":[...],\"total\":N} incl. fixture row with id/query/category/source_count/status/archived:false; limit=abc -> 422 int_parsing"
+    },
+    {
+     "method": "GET",
+     "path": "/api/research/report/{session_id}",
+     "status": "PASS",
+     "evidence": "GET report/audit-tmp-ra -> 200 text/html full report page (<!DOCTYPE html>...)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/research/result-peek/{session_id}",
+     "status": "PASS",
+     "evidence": "POST -> 200 {\"result\":\"# Report...\",\"sources\":[],\"raw_findings\":[],\"category\":\"\"}; unknown sid -> 404 \"No research found for this session\""
+    },
+    {
+     "method": "POST",
+     "path": "/api/research/result/{session_id}",
+     "status": "PASS",
+     "evidence": "POST result/audit-tmp-rb -> 200 {\"result\":\"# Report...\",\"sources\":[],\"raw_findings\":[]} (consume); unknown sid -> 404 \"No research result available\""
+    },
+    {
+     "method": "POST",
+     "path": "/api/research/spinoff/{session_id}",
+     "status": "PASS",
+     "evidence": "POST spinoff/audit-tmp-ra -> 200 {\"session_id\":\"<uuid4>\",\"name\":\"Follow-up: audit-tmp test q\",\"source_count\":0}; resultless sid -> 404 \"No research result available for this session\" (session cleaned up after)"
+    },
+    {
+     "method": "GET",
+     "path": "/api/research/status/{session_id}",
+     "status": "PASS",
+     "evidence": "GET status/audit-tmp-ra -> 200 {\"status\":\"done\",\"progress\":{},\"query\":\"audit-tmp test q\",\"started_at\":1718000000}; nonexistent-id -> 404 \"No research found for this session\""
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/research/{session_id}",
+     "status": "PASS",
+     "evidence": "DELETE -> 200 {\"deleted\":true}; repeat -> 200 {\"deleted\":false}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/research/{session_id}/archive",
+     "status": "PASS",
+     "evidence": "POST ?archived=true -> 200 {\"ok\":true,\"id\":\"audit-tmp-ra\",\"archived\":true} (visible via library?archived=true), restore false ok; unknown sid -> 404 \"Research not found\""
+    },
+    {
+     "method": "POST",
+     "path": "/api/research/{session_id}/hide-image",
+     "status": "PASS",
+     "evidence": "POST {\"url\":\"https://example.com/img.png\"} -> 200 {\"ok\":true}, file gained hidden_images:[url]; missing url -> 422 field required"
+    },
+    {
+     "method": "POST",
+     "path": "/api/research/{session_id}/unhide-images",
+     "status": "PASS",
+     "evidence": "POST empty body -> 200 {\"ok\":true}, file hidden_images became []"
+    },
+    {
+     "method": "POST",
+     "path": "/api/search",
+     "status": "PASS",
+     "evidence": "POST {\"query\":\"latest python release\"} -> 200 keys [context,sources] (5 sources, no error key); empty body -> 200 {\"context\":\"\",\"sources\":[],\"error\":\"query is required\"}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/search/config",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"primary_provider\":\"searxng\",\"active_provider\":\"searxng\",\"has_api_key\":false,\"result_count\":5,\"search_url\":\"http://localhost:8080\"}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/search/providers",
+     "status": "PASS",
+     "evidence": "GET -> 200 top-level array of 6 {id,label,available}; duckduckgo available:true, keyed providers false, no 'disabled' entry"
+    },
+    {
+     "method": "POST",
+     "path": "/api/search/query",
+     "status": "PASS",
+     "evidence": "POST {query,provider:duckduckgo,count:5} -> 200 {results:5 items,provider:\"duckduckgo\",time:float}; provider bing -> 200 {\"results\":[],\"provider\":\"bing\",\"error\":\"Unknown provider\"}"
+    }
+   ]
+  },
+  {
+   "key": "sessions+history-1",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/conversations/topics",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"topics\":[{\"topic\":\"Technology\",\"frequency\":6,\"examples\":[{session_id,session_name,role,snippet,keyword}...]}]} matching fixture keywords 'python'"
+    },
+    {
+     "method": "GET",
+     "path": "/api/history/{session_id}",
+     "status": "BLOCKED",
+     "reason": "shadowed-route (unreachable as mounted)",
+     "evidence": "GET /api/history/<sid> returned {\"history\":[...]} only (no model/endpoint_url/name/crew_member_id keys) \u2014 session_routes handler wins per test_plan; rich history_routes handler unreachable over HTTP",
+     "diagnosis": "Documented DEAD ROUTE; behavior unchanged from prior passes"
+    },
+    {
+     "method": "GET",
+     "path": "/api/history/{sid}",
+     "status": "PASS",
+     "evidence": "GET fixture sid -> 200 {\"history\":[4 msgs with role/content/metadata._db_id]}; unknown sid -> 404 'Session ... not found'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/session",
+     "status": "PASS",
+     "evidence": "POST name=audit-tmp-rv1&skip_validation=true -> 200 {id,name,model:\"\",rag:false,archived:false}; no endpoint_url/skip_validation -> 400 'endpoint_url is required (choose from /api/models)'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/session/openai",
+     "status": "BLOCKED",
+     "reason": "no-creds-graceful",
+     "evidence": "POST model=gpt-4o -> 400 {\"detail\":\"Server missing OPENAI_API_KEY\"} (clean documented error, no 500/hang)"
+    },
+    {
+     "method": "GET",
+     "path": "/api/session/{session_id}/context_info",
+     "status": "PASS",
+     "evidence": "GET on endpoint-less fixture -> 200 {\"context_length\":null} (graceful degrade as documented)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/session/{session_id}/delete-messages",
+     "status": "PASS",
+     "evidence": "POST {msg_ids:[<db-uuid>]} -> 200 {\"status\":\"ok\",\"deleted\":1}; unknown msg_id -> 200 {\"deleted\":0}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/session/{session_id}/edit-message",
+     "status": "PASS",
+     "evidence": "POST {msg_id,content} -> 200 {\"status\":\"ok\"}; missing msg_id -> 400 'msg_id and content are required'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/session/{session_id}/fork",
+     "status": "PASS",
+     "evidence": "POST {keep_count:2} -> 200 {\"status\":\"ok\",\"id\":\"<new-uuid>\",\"name\":\"\u2add audit-tmp-rv1\",\"kept\":1} (kept reflects actual in-memory msg count after prior truncate/delete ops; shape matches contract)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/session/{session_id}/important",
+     "status": "PASS",
+     "evidence": "important=true -> 200 {\"status\":\"success\",\"is_important\":true}; DELETE while starred -> 403 SESSION_STARRED; important=notabool -> 422 bool_parsing; important=false -> 200"
+    },
+    {
+     "method": "POST",
+     "path": "/api/session/{session_id}/mark-stopped",
+     "status": "PASS",
+     "evidence": "POST (no body) -> 200 {\"status\":\"ok\"} (known-fixed behavior confirmed)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/session/{session_id}/merge-last-assistant",
+     "status": "PASS",
+     "evidence": "POST {separator:\"\\n\\n\"} with 2 assistant msgs -> 200 {\"status\":\"ok\",\"merged\":true} (known-fixed behavior confirmed)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/session/{session_id}/message",
+     "status": "PASS",
+     "evidence": "POST {role,content,metadata} x4 -> 200 {\"status\":\"ok\"}, visible in history; {\"content\":\"\"} -> 400 'content is required'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/session/{session_id}/truncate",
+     "status": "PASS",
+     "evidence": "POST {keep_count:2} -> 200 {\"status\":\"ok\",\"kept\":2,\"truncated\":true}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/session/{session_id}/update-last-meta",
+     "status": "PASS",
+     "evidence": "POST {metadata:{rating:5}} -> 200 {\"status\":\"ok\"} (known-fixed behavior confirmed)"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/session/{sid}",
+     "status": "PASS",
+     "evidence": "DELETE unstarred fixture -> 200 {\"status\":\"deleted\"}; starred -> 403 {\"detail\":{\"error\":\"SESSION_STARRED\",...}}"
+    },
+    {
+     "method": "PATCH",
+     "path": "/api/session/{sid}",
+     "status": "PASS",
+     "evidence": "PATCH name+folder -> 200 {\"id\",\"name\":\"audit-tmp-rv1-renamed\",\"folder\":\"audit-tmp-folder\"}; unknown sid -> 404 'Session ... not found'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/session/{sid}/archive",
+     "status": "PASS",
+     "evidence": "POST -> 200 {\"status\":\"archived\"}; unknown sid -> 404 \"Session ... not found\""
+    },
+    {
+     "method": "POST",
+     "path": "/api/session/{sid}/delete",
+     "status": "PASS",
+     "evidence": "POST alias -> 200 {\"status\":\"deleted\"}; subsequent GET /api/history/<sid> -> 404"
+    },
+    {
+     "method": "GET",
+     "path": "/api/session/{sid}/export",
+     "status": "PASS",
+     "evidence": "GET ?fmt=json -> 200 Content-Type application/json, body {name,model,exported,messages:[{role,content}]}"
+    }
+   ],
+   "batch_notes": "Lean re-verification of batch 'sessions+history-1': 18 PASS, 2 BLOCKED (shadowed /api/history/{session_id} rich handler \u2014 documented dead route, confirmed still shadowed; /api/session/openai \u2014 no OPENAI_API_KEY, clean 400 per no-creds-graceful). No regressions found. No LLM calls triggered, no logins performed. Fixtures: created audit-tmp-rv1 (e314c059) and its fork (8a6a164b); both deleted (200) at end. Minor non-deviation note: fork returned kept:1 vs requested keep_count:2 because the fixture's in-memory history had been reduced by the preceding merge/delete-messages/truncate sequence \u2014 response shape and semantics (kept=min(keep_count,len)) match the documented contract."
+  },
+  {
+   "key": "sessions+history-2",
+   "results": [
+    {
+     "method": "POST",
+     "path": "/api/session/{sid}/inject_messages",
+     "status": "PASS",
+     "evidence": "POST 2 msgs to own sid -> 200 {\"ok\":true,\"count\":2}; bad_input msg missing 'role' -> 500 (matches documented KeyError behavior)",
+     "reason": "Matches test_plan exactly, including documented bad_input 500."
+    },
+    {
+     "method": "POST",
+     "path": "/api/session/{sid}/unarchive",
+     "status": "PASS",
+     "evidence": "Archived then unarchived own sid -> 200 {\"status\":\"unarchived\"}, session reappeared in GET /api/sessions (archived:false); unknown sid -> 404 'Session ... not found'",
+     "reason": "Matches test_plan."
+    },
+    {
+     "method": "GET",
+     "path": "/api/sessions",
+     "status": "PASS",
+     "evidence": "GET with cookie -> 200 array; fixture item present with all 18 documented keys (id,name,model,endpoint_url,rag,archived,folder,total_tokens,is_important,created_at,updated_at,last_message_at,has_documents,has_images,mode,message_count,crew_member_id,claude_session_id); no cookie -> 401 {\"error\":\"Not authenticated\"}",
+     "reason": "Matches test_plan."
+    },
+    {
+     "method": "GET",
+     "path": "/api/sessions/archived",
+     "status": "PASS",
+     "evidence": "GET ?search=audit-tmp-sh2&offset=0&limit=20&sort=recent -> 200 {sessions:[{id,name,model,message_count,created_at,updated_at,is_important}],total:1}; offset=abc -> 422",
+     "reason": "Matches test_plan."
+    },
+    {
+     "method": "POST",
+     "path": "/api/sessions/bulk-delete",
+     "status": "PASS",
+     "evidence": "POST {ids:[sid2,sid3]} -> 200 {\"deleted\":2} and sessions actually gone from list; non-JSON body -> 200 {\"deleted\":0}",
+     "reason": "Matches test_plan including swallowed-error bad_input behavior."
+    },
+    {
+     "method": "POST",
+     "path": "/api/sessions/save",
+     "status": "PASS",
+     "evidence": "POST with cookie -> 200 {\"ok\":true,\"path\":\"/Users/clawdio/odysseus/data/sessions.json\"}; no cookie -> 401 'Not authenticated'",
+     "reason": "Matches test_plan."
+    }
+   ],
+   "batch_notes": "Lean re-verification of batch 'sessions+history-2': 6/6 PASS, no regressions. Fixtures: 3 sessions named audit-tmp-sh2-{1,2,3} created via form POST /api/session (skip_validation=true, sidecar endpoint_url; note JSON body is rejected with 400 'endpoint_url is required' since the handler takes Form fields). All fixtures deleted via bulk-delete; verified 0 remaining in active and archived lists. No LLM calls triggered, no settings touched, no logins performed."
+  },
+  {
+   "key": "skills+crew-1",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/agents",
+     "status": "PASS",
+     "evidence": "GET with cookie -> 200 {agents:[{id,name,...}]}; no cookie -> 401 {\"error\":\"Not authenticated\"}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/agents",
+     "status": "PASS",
+     "evidence": "POST name/personality/color -> 200 {agent:{id:27b04b1a...,name:audit-tmp-agent}}; blank name -> 400 'name is required'; bogus endpoint_url -> 400 'endpoint_url must be a configured, enabled model endpoint...'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/agents/builder/start",
+     "status": "PASS",
+     "evidence": "POST {} -> 200 {builder_id, draft:{name,description,personality,greeting,capabilities}, reply:'Hi! Tell me...', is_edit:false}; seed_agent_id nonexistent -> 404 'Agent not found'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/agents/builder/{builder_id}/commit",
+     "status": "PASS",
+     "evidence": "Seeded builder (seed_template) commit -> 200 {agent:{id,name:audit-tmp-scribe}}; unknown builder_id -> 400 'Builder session not found'"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/agents/{agent_id}",
+     "status": "PASS",
+     "evidence": "DELETE fixture agents (x3) -> 200 {deleted:true,id}; unknown id -> 404 'Agent not found'"
+    },
+    {
+     "method": "GET",
+     "path": "/api/agents/{agent_id}",
+     "status": "PASS",
+     "evidence": "GET fixture id -> 200 {agent:{id,name,...}}; unknown id -> 404 'Agent not found'"
+    },
+    {
+     "method": "PATCH",
+     "path": "/api/agents/{agent_id}",
+     "status": "PASS",
+     "evidence": "PATCH {description,color} -> 200 agent with description='Updated by test2', color='#3366ff' (no updated_at key in serialization, consistent with prior passes); bogus endpoint_url -> 400"
+    },
+    {
+     "method": "GET",
+     "path": "/api/agents/{agent_id}/activity",
+     "status": "PASS",
+     "evidence": "GET ?limit=10 on fresh agent -> 200 {\"runs\":[]}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/agents/{agent_id}/duplicate",
+     "status": "PASS",
+     "evidence": "POST -> 200 {agent:{id:<new>,name:'audit-tmp-agent (copy)'}}; copy deleted afterwards"
+    },
+    {
+     "method": "POST",
+     "path": "/api/agents/{agent_id}/reset_session",
+     "status": "PASS",
+     "evidence": "POST -> 200 {\"ok\":true,\"archived_sessions\":[],\"new_session\":null}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/skills",
+     "status": "PASS",
+     "evidence": "GET -> 200 {skills:[],count:0}; after /add showed count:1 ['audit-tmp-skill']"
+    },
+    {
+     "method": "POST",
+     "path": "/api/skills/add",
+     "status": "PASS",
+     "evidence": "POST full payload -> 200 {ok:true,deduped:false,skill:{id:'audit-tmp-skill',...}}; 120-char name -> 422 pydantic validation"
+    },
+    {
+     "method": "POST",
+     "path": "/api/skills/audit-all/cancel",
+     "status": "PASS",
+     "evidence": "POST -> 200 {\"ok\":true,\"status\":\"none\"} (no job running)"
+    },
+    {
+     "method": "GET",
+     "path": "/api/skills/audit-all/status",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"status\":\"none\"}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/skills/builtin",
+     "status": "PASS",
+     "evidence": "GET -> 200 {builtin:[{name,description,is_overridden}...],count:53}, sorted (first 'app_api')"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/skills/builtin/{name}",
+     "status": "PASS",
+     "evidence": "DELETE app_api after PUT -> 200 {ok:true,name:'app_api',is_overridden:false}; follow-up GET confirms is_overridden=false (override fully reverted)"
+    },
+    {
+     "method": "GET",
+     "path": "/api/skills/builtin/{name}",
+     "status": "PASS",
+     "evidence": "GET app_api -> 200 {name,text(2685ch),default(2685ch),is_overridden:false}; no-such-tool -> 404 \"No built-in tool named 'no-such-tool'\""
+    },
+    {
+     "method": "PUT",
+     "path": "/api/skills/builtin/{name}",
+     "status": "PASS",
+     "evidence": "PUT {text:'TEST OVERRIDE...'} -> 200 {ok:true,is_overridden:true}, GET confirmed override text; empty text -> 400 'text is required'; reverted via DELETE"
+    },
+    {
+     "method": "GET",
+     "path": "/api/skills/index",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"index\":[],\"count\":0} (draft fixture skill excluded from prompt index, as in prior passes)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/skills/search",
+     "status": "PASS",
+     "evidence": "POST {query:'audit-tmp'} -> 200 {skills,query:'audit-tmp',count:0}; empty query -> 400 'query is required'"
+    }
+   ],
+   "batch_notes": "Batch skills+crew-1: 20/20 PASS, no regressions. Fixtures cleaned: 3 audit-tmp agents deleted (200 deleted:true), audit-tmp-skill deleted (200 ok:true, skills count back to 0), app_api builtin override reverted (is_overridden:false). No background skills audit was triggered by skill_added (audit-all/status stayed 'none'); cancel called defensively right after add. No LLM calls made (builder commit used seed_template path). Minor non-deviation note: PATCH /api/agents response omits an updated_at field (test_plan mentions it, but serialized agent keys do not include it; same shape as earlier passes, updated fields verified directly)."
+  },
+  {
+   "key": "skills+crew-2",
+   "results": [
+    {
+     "method": "DELETE",
+     "path": "/api/skills/{skill_id}",
+     "status": "PASS",
+     "evidence": "DELETE /api/skills/audit-tmp-inv-skill -> 200 {\"ok\":true}; DELETE /api/skills/nonexistent -> 404 {\"detail\":\"Skill not found\"}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/skills/{skill_id}",
+     "status": "PASS",
+     "evidence": "GET /api/skills/audit-tmp-inv-skill -> 200 skill dict (name, description, category, tags, status, confidence, owner...); GET /api/skills/nonexistent-skill -> 404 \"Skill not found\""
+    },
+    {
+     "method": "PUT",
+     "path": "/api/skills/{skill_id}",
+     "status": "PASS",
+     "evidence": "PUT {\"description\":\"Updated description\",\"confidence\":0.9} -> 200 {\"ok\":true} (change confirmed in subsequent markdown GET); PUT unknown skill -> 404 \"Skill not found\""
+    },
+    {
+     "method": "GET",
+     "path": "/api/skills/{skill_id}/markdown",
+     "status": "PASS",
+     "evidence": "GET .../audit-tmp-inv-skill/markdown -> 200 {\"name\":\"audit-tmp-inv-skill\",\"markdown\":\"---\\nname: audit-tmp-inv-skill\\ndescription: ...\"}; unknown skill -> 404 \"Skill not found\""
+    },
+    {
+     "method": "POST",
+     "path": "/api/skills/{skill_id}/markdown",
+     "status": "PASS",
+     "evidence": "POST full tweaked SKILL.md -> 200 {\"ok\":true,\"name\":\"audit-tmp-inv-skill\"}; {\"markdown\":\"\"} -> 400 \"markdown is required\"; no-frontmatter text -> 400 \"Could not parse SKILL.md: missing YAML frontmatter with a 'name' field\""
+    },
+    {
+     "method": "GET",
+     "path": "/api/skills/{skill_id}/test-status",
+     "status": "PASS",
+     "evidence": "GET .../audit-tmp-inv-skill/test-status with no job running -> 200 {\"status\":\"none\"}"
+    }
+   ],
+   "batch_notes": "All 6 endpoints PASS, matching test_plan shapes exactly (including the known-fixed 400 for no-frontmatter markdown). LLM-safety handling: the admin-owned 'Skills Audit' scheduled task (event skill_added, threshold 5) was at counter 2/5; my initial admin-scoped /add moved it to 3/5. Pausing the task and editing the _usage.json sidecar were both denied by the permission classifier, so I switched to a throwaway user 'audit-tmp-sk2' (one login, per rule 2) \u2014 skill_added events are owner-scoped, so the full fixture sequence ran with zero further increments to the admin counter. Final state verified: counter 3/5 active (no LLM run triggered), fixture skill deleted via the DELETE test, audit-tmp-sk2 user deleted, temp cookie jar removed, no audit-tmp residue in /Users/clawdio/odysseus/data/skills. Note for future passes: a plain re-run of add+PUT+POST-markdown as admin fires up to 3 skill_added events \u2014 check the counter first or use a throwaway user."
+  },
+  {
+   "key": "tasks+webhooks-1",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/tasks",
+     "status": "PASS",
+     "evidence": "GET ?include_last_run=true&status=active -> 200 {\"tasks\":[...]} items with id/name/task_type/schedule/status/next_run; ?status=bogus -> 200 {\"tasks\":[]}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/tasks",
+     "status": "PASS",
+     "evidence": "Schedule task -> 200 id uuid, status active, next_run 2026-06-11T09:00:00Z, crew_member_id set; webhook task -> 43-char webhook_token; no-prompt body -> 400 \"Prompt is required for LLM/research tasks\""
+    },
+    {
+     "method": "GET",
+     "path": "/api/tasks/meta/actions",
+     "status": "PASS",
+     "evidence": "200 {\"actions\":[16 items]}; admin sees ssh_command+run_script",
+     "diagnosis": "run_local absent even for admin \u2014 not a regression: src/builtin_actions.py BUILTIN_ACTION_INFO (line 2223) intentionally omits run_local from the advertised list while the handler stays in BUILTIN_ACTIONS and remains admin-gated at create/update (routes/task_routes.py:317)"
+    },
+    {
+     "method": "GET",
+     "path": "/api/tasks/meta/events",
+     "status": "PASS",
+     "evidence": "200 {\"events\":[7]} incl session_created, message_sent, document_created, memory_added, research_completed, email_received, skill_added"
+    },
+    {
+     "method": "GET",
+     "path": "/api/tasks/meta/output-targets",
+     "status": "PASS",
+     "evidence": "200 {\"targets\":[...]} with built-ins session/notification/email plus MCP-derived entries"
+    },
+    {
+     "method": "GET",
+     "path": "/api/tasks/notifications",
+     "status": "PASS",
+     "evidence": "200 {\"notifications\":[]}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/tasks/onboarding",
+     "status": "PASS",
+     "evidence": "200 {\"opened\":false,\"enabled\":false}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/tasks/onboarding",
+     "status": "PASS",
+     "evidence": "POST {} -> 200 {\"ok\":true,\"opened\":true,\"enabled\":false,\"resumed\":0}; non-JSON body -> 422; prefs tasks_opened/tasks_enabled restored to prior null afterwards (GET back to false/false)"
+    },
+    {
+     "method": "GET",
+     "path": "/api/tasks/runs/active",
+     "status": "PASS",
+     "evidence": "200 {\"runs\":[]} while idle"
+    },
+    {
+     "method": "GET",
+     "path": "/api/tasks/runs/recent",
+     "status": "PASS",
+     "evidence": "?limit=10 -> 200 runs with id/task_id/task_name/status/result/has_steps/output_target; limit=0 -> 200 (clamped, no error)"
+    },
+    {
+     "method": "GET",
+     "path": "/api/tasks/runs/{run_id}/live",
+     "status": "PASS",
+     "evidence": "Finished run caffb7b8 -> 200 text/event-stream, emits data: [DONE] and closes (documented pass); unknown run_id -> 404"
+    },
+    {
+     "method": "GET",
+     "path": "/api/tasks/runs/{run_id}/steps",
+     "status": "PASS",
+     "evidence": "200 {run_id,status:\"success\",steps:[],result,crew_member_id,task_name}; unknown run_id -> 404"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/tasks/{task_id}",
+     "status": "PASS",
+     "evidence": "DELETE fixture -> 200 {\"ok\":true}, subsequent GET -> 404; DELETE unknown -> 404 \"Task not found\""
+    },
+    {
+     "method": "GET",
+     "path": "/api/tasks/{task_id}",
+     "status": "PASS",
+     "evidence": "GET fixture -> 200 full dict (id/name/schedule/status/next_run/run_count); unknown id -> 404"
+    },
+    {
+     "method": "PUT",
+     "path": "/api/tasks/{task_id}",
+     "status": "PASS",
+     "evidence": "{\"name\":\"audit-tmp-r3-renamed\",\"scheduled_time\":\"10:30\"} -> 200 renamed, next_run recomputed to 10:30Z; bad cron -> 400 \"Invalid cron expression\""
+    },
+    {
+     "method": "POST",
+     "path": "/api/tasks/{task_id}/pause",
+     "status": "PASS",
+     "evidence": "200 {\"ok\":true,\"status\":\"paused\"}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/tasks/{task_id}/resume",
+     "status": "PASS",
+     "evidence": "200 {\"ok\":true,\"status\":\"active\",\"next_run\":\"2026-06-11T10:30:00Z\"}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/tasks/{task_id}/revert",
+     "status": "PASS",
+     "evidence": "Builtin 08eb928e -> 200 ok:true, trigger_counter 0, prompt/model/endpoint_url nulled, status stayed active; custom task -> 400 \"Not a built-in task\""
+    },
+    {
+     "method": "GET",
+     "path": "/api/tasks/{task_id}/runs",
+     "status": "PASS",
+     "evidence": "?limit=20&offset=0 -> 200 {\"runs\":[],\"total\":0} for never-run fixture; unknown task_id -> 404"
+    },
+    {
+     "method": "POST",
+     "path": "/api/tasks/{task_id}/stop",
+     "status": "PASS",
+     "evidence": "Not-running task -> 404 \"Task is not running\" (documented deterministic path; in-flight happy path skipped: would require an LLM run, llm-reserved)"
+    }
+   ],
+   "batch_notes": "All 20 endpoints in batch tasks+webhooks-1 re-verified clean, no regressions. Fixtures audit-tmp-r3-hello (renamed audit-tmp-r3-renamed) and audit-tmp-r3-wh created and deleted; onboarding prefs (tasks_opened/tasks_enabled) restored to prior null values via PUT /api/prefs/{key}; builtin revert left Chat Sessions Tidy at its default active state (only trigger_counter reset, not restorable via API and accepted per test plan). One non-deviation worth recording: meta/actions never lists run_local for anyone because BUILTIN_ACTION_INFO in /Users/clawdio/odysseus/src/builtin_actions.py omits it by design (handler still exists and is admin-gated); the test_plan wording \"as admin they appear\" is imprecise for run_local. Observed pre-existing leftover prefs from earlier passes (audit-tmp-key, audit-tmp-key2, audit-tmp-key4 in /api/prefs) \u2014 not created by this batch, left untouched."
+  },
+  {
+   "key": "tasks+webhooks-2",
+   "results": [
+    {
+     "method": "POST",
+     "path": "/api/tasks/{task_id}/webhook-regenerate",
+     "status": "PASS",
+     "evidence": "POST /api/tasks/9d00c880-.../webhook-regenerate -> 200 {\"ok\":true,\"webhook_token\":\"<43-char urlsafe>\"}; unknown id -> 404 \"Task not found\"",
+     "reason": "Matches test_plan; worked on a non-webhook scheduled task as documented. Skipped old-token trigger probe per lean-pass/no-LLM rules."
+    },
+    {
+     "method": "GET",
+     "path": "/api/webhooks",
+     "status": "PASS",
+     "evidence": "GET /api/webhooks -> 200 [] then [{id,name,url,has_secret:false,events,is_active,last_triggered_at,last_status_code,last_error,created_at}]; no-cookie -> 401 \"Not authenticated\"",
+     "reason": "Shape matches incl. has_secret (no secret leak). Auth rejection verified cookie-less (401); did not burn a login on a non-admin 403 check."
+    },
+    {
+     "method": "POST",
+     "path": "/api/webhooks",
+     "status": "PASS",
+     "evidence": "FORM POST name=audit-tmp-hook url=https://example.com/hook events=webhook.test -> 200 {\"id\":\"606bd05f\",\"name\":\"audit-tmp-hook\"}; events=bogus -> 400 \"Invalid events: bogus. Allowed: chat.completed, chat.message, session.created\"",
+     "reason": "Matches test_plan. First attempt exceeded 30s client timeout due to slow egress DNS in this env (server-side SSRF resolution of example.com); succeeded with longer timeout \u2014 environmental, not a regression."
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/webhooks/{webhook_id}",
+     "status": "PASS",
+     "evidence": "DELETE /api/webhooks/606bd05f -> 200 {\"status\":\"deleted\"}; unknown id -> 404 \"Webhook not found\""
+    },
+    {
+     "method": "PATCH",
+     "path": "/api/webhooks/{webhook_id}",
+     "status": "PASS",
+     "evidence": "PATCH /api/webhooks/606bd05f -> 200 {\"id\":\"606bd05f\",\"is_active\":false}; second PATCH -> is_active:true; unknown id -> 404 \"Webhook not found\""
+    },
+    {
+     "method": "POST",
+     "path": "/api/webhooks/{webhook_id}/test",
+     "status": "PASS",
+     "evidence": "POST /api/webhooks/606bd05f/test -> 200 {\"status\":\"sent\"}; unknown id -> 404 \"Webhook not found\"",
+     "reason": "Returned sent immediately regardless of remote delivery outcome, as documented."
+    }
+   ],
+   "batch_notes": "All 6 endpoints PASS, no regressions. Fixtures cleaned: webhook 606bd05f deleted (list back to []), task 9d00c880-008e-413c-ba92-38bc73ff3eae deleted (200 {ok:true}). Two minor observations, neither a deviation worth flagging: (1) POST /api/webhooks can exceed 30s when egress DNS is slow (SSRF hostname resolution) \u2014 environmental; (2) the 400 invalid-events message lists Allowed as 'chat.completed, chat.message, session.created' (omits webhook.test from the message text) yet events=webhook.test is accepted on create \u2014 cosmetic message/whitelist mismatch only. Auth bad-input for GET /api/webhooks was checked cookie-less (401 Not authenticated) instead of via a non-admin session to respect the shared login rate-limit budget."
+  },
+  {
+   "key": "upload+vault+sig+font+emoji",
+   "results": [
+    {
+     "method": "GET",
+     "path": "/api/emoji/{code}.svg",
+     "status": "PASS",
+     "evidence": "GET 1f600.svg -> 200 image/svg+xml, Cache-Control public,max-age=31536000,immutable, real OpenMoji glyph; zzz!.svg -> 200 blank 1x1 SVG with no-store (never 404s, as documented)"
+    },
+    {
+     "method": "GET",
+     "path": "/api/fonts/custom",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"fonts\":{\"Gohu Font\":[{\"file\":\"GohuFont.ttf\",\"url\":\"/static/fonts/custom/GohuFont.ttf\",\"format\":\"ttf\"}]}} \u2014 matches documented grouped-by-family shape"
+    },
+    {
+     "method": "GET",
+     "path": "/api/signatures",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"signatures\":[]} (clean list, expected shape)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/signatures",
+     "status": "PASS",
+     "evidence": "POST 1x1 PNG b64 -> 200 {id:uuid,name:\"audit-tmp-sig\",data_url:\"data:image/png;base64,...\"}; bad data \"%%%not-base64\" -> 400 'Signature data must be base64-encoded PNG bytes'"
+    },
+    {
+     "method": "DELETE",
+     "path": "/api/signatures/{sig_id}",
+     "status": "PASS",
+     "evidence": "DELETE fixture id -> 200 {\"deleted\":\"6cb40ffe-...\"}; unknown uuid -> 404 'Signature not found'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/upload",
+     "status": "PASS",
+     "evidence": "multipart files=4x4 PNG -> 200 files[0] {id:\"efcbe2d6...d.png\" (32-hex.ext), mime image/png, width:4,height:4,is_duplicate:false}; evil .exe -> 400 'File type not allowed: application/x-msdownload'"
+    },
+    {
+     "method": "POST",
+     "path": "/api/upload/cleanup",
+     "status": "BLOCKED",
+     "evidence": "Not executed: sandbox auto-mode classifier denied the POST (mass-delete class) despite verified no-op (oldest upload 2026-06-10, threshold 30d)",
+     "reason": "sandbox-permission-denied; endpoint validated in prior two passes, no regression signal available this pass"
+    },
+    {
+     "method": "GET",
+     "path": "/api/upload/stats",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"total_files\":19,\"total_size\":27490,\"total_size_mb\":0.03,\"file_types\":{...},\"cleanup_days\":30}"
+    },
+    {
+     "method": "GET",
+     "path": "/api/upload/{file_id}",
+     "status": "PASS",
+     "evidence": "GET fixture id -> 200 image/png, Content-Disposition filename=\"audit-tmp-png.png\", valid PNG bytes; ?thumb=1 -> 200 image/jpeg thumbnail; 'not-a-valid-id' -> 400 'Invalid file ID'; valid-format missing -> 404 'File not found'"
+    },
+    {
+     "method": "PUT",
+     "path": "/api/upload/{file_id}/vision",
+     "status": "PASS",
+     "evidence": "PUT {\"text\":\"audit-tmp corrected OCR\"} -> 200 {\"ok\":true}; GET vision -> {\"text\":\"audit-tmp corrected OCR\",\"cached\":true}; {\"text\":123} -> 400 'text must be a string'"
+    },
+    {
+     "method": "GET",
+     "path": "/api/vault/config",
+     "status": "PASS",
+     "evidence": "GET -> 200 {\"server_url\":\"\",\"email\":\"\",\"unlocked\":false,\"unlocked_at\":\"\",\"bw_installed\":false} (clean install, bw not on PATH)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/vault/config",
+     "status": "PASS",
+     "evidence": "POST {server_url:\"\",email:\"audit-tmp-vault@example.com\"} -> 200 {\"ok\":true} (empty URL skips bw subprocess); prior empty state restored via logout and re-verified"
+    },
+    {
+     "method": "POST",
+     "path": "/api/vault/lock",
+     "status": "PASS",
+     "evidence": "POST (no body) -> 200 {\"ok\":true,\"message\":\"Vault locked\"}"
+    },
+    {
+     "method": "POST",
+     "path": "/api/vault/login",
+     "status": "BLOCKED",
+     "evidence": "POST creds -> 200 {\"ok\":false,\"error\":\"Login failed: bw CLI not installed (install `nodejs-bitwarden-cli` or `bitwarden-cli`)\"}; missing master_password -> 422",
+     "reason": "no-creds-graceful"
+    },
+    {
+     "method": "POST",
+     "path": "/api/vault/logout",
+     "status": "PASS",
+     "evidence": "POST -> 200 {\"ok\":true}; subsequent GET /api/vault/config shows email \"\" / unlocked false (state cleared, matches prior)"
+    },
+    {
+     "method": "POST",
+     "path": "/api/vault/unlock",
+     "status": "BLOCKED",
+     "evidence": "POST {master_password} -> 200 {\"ok\":false,\"error\":\"Unlock failed: bw CLI not installed...\"}; {} -> 422 field required",
+     "reason": "no-creds-graceful"
+    }
+   ],
+   "batch_notes": "13 PASS, 3 BLOCKED, 0 FAIL \u2014 no regressions detected. BLOCKED: vault login/unlock are EXTERNAL-CREDS with graceful ok:false (no bw CLI installed); /api/upload/cleanup was denied by the sandbox auto-mode classifier this pass (it also denied deleting the fixture), not by the app. Leftover fixture I could not remove: upload efcbe2d6b91e4d1cad7dc4ebad4fac1d.png (audit-tmp-png.png, 74 bytes, owner admin) plus its vision-cache override text 'audit-tmp corrected OCR' \u2014 classifier blocked both DELETE /api/upload/{id} and cleanup; please remove manually or via an authorized session. Signature fixture was created and deleted cleanly. Vault config GET'd first and restored to exact prior (all-empty) state; settings untouched otherwise. No logins performed, no LLM calls triggered."
+  }
+ ],
+ "counts": {
+  "PASS": 350,
+  "FAIL": 0,
+  "BLOCKED": 36
+ }
+}

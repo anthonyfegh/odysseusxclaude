@@ -1,0 +1,60 @@
+{
+ "results": [
+  {
+   "method": "DELETE",
+   "path": "/api/contacts/clear",
+   "status": "PASS",
+   "evidence": "-> 200 {success:true}; contacts were empty (no CardDAV). Idempotent wipe.",
+   "reason": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/gallery/clear-ai-tags",
+   "status": "PASS",
+   "evidence": "scoped ?image_id=<fixture> -> 200 {ok:true, cleared:0} (image had no ai_tags). Unscoped form clears all caller images.",
+   "reason": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/gallery/clear-user-tags",
+   "status": "PASS",
+   "evidence": "-> 200 {ok:true, cleared:0} (no user tags on the single fixture image).",
+   "reason": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/documents/tidy",
+   "status": "PASS",
+   "evidence": "created real doc (long prose, survives) + junk doc (title empty, content 'hi') -> 200 {fixed_titles:0, deleted:1, message:'Fixed 0 titles, removed 1 empty document'}. Junk hard-deleted, real survived = intended heuristic.",
+   "reason": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/email/odysseus/reminders",
+   "status": "BLOCKED",
+   "evidence": "?permanent=false -> 200 {success:false, error:'Mail operation failed'} \u2014 graceful (no traceback/hang), but message generic. EXTERNAL-CREDS: no IMAP configured.",
+   "reason": "no-creds-graceful"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/admin/wipe/{kind}",
+   "status": "PASS",
+   "evidence": "created throwaway note then DELETE /api/admin/wipe/notes -> 200 {status:'deleted', kind:'notes', count:1}. Bad kind /wipe/bogus -> 400 'Unknown wipe kind'. Valid kinds: chats,memory,skills,notes,tasks,documents,gallery,calendar.",
+   "reason": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/tasks/{task_id}/clear-cache",
+   "status": "PASS",
+   "evidence": "built-in summarize_emails task 8a92cb8a -> 200 {ok:true, action:'summarize_emails', cleared:{email_summaries:0}, files:0}. Wipes derived email caches (empty here).",
+   "reason": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/sessions/all",
+   "status": "PASS",
+   "evidence": "3 sessions before -> 200 {status:'deleted', count:3} -> 0 sessions after. CRITICAL: admin login still valid afterward (auth sessions are separate from chat sessions) \u2014 loop can still log in.",
+   "reason": null
+  }
+ ]
+}

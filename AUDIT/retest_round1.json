@@ -1,0 +1,88 @@
+{
+ "results": [
+  {
+   "method": "GET",
+   "path": "/backgrounds",
+   "status": "PASS",
+   "evidence": "RETEST after b710221: cookie+internal-token both -> 404 'backgrounds.html not found' (was 500 cookie / swallowed-302 internal). Optional dev page absent in this build; clean 404 + middleware no longer swallows downstream errors."
+  },
+  {
+   "method": "POST",
+   "path": "/api/cookbook/setup",
+   "status": "PASS",
+   "evidence": "RETEST after 1dc3c8b: {'host':'audit-tmp@127.0.0.1'} -> 200 {'ok':false,'output':'Host key verification failed.'} \u2014 real ssh error, no '/bin/sh syntax error', no false ok:true. Bad inputs (empty host->400, bad port->400) per fleet. EXTERNAL-CREDS remote feature; degrades cleanly."
+  },
+  {
+   "method": "POST",
+   "path": "/api/presets/groups",
+   "status": "PASS",
+   "evidence": "RETEST after 7789aa1: malformed JSON body -> 400 'Invalid JSON body' (was 500 traceback). Happy path {groups:[...]} -> 200 {ok:true} per fleet."
+  },
+  {
+   "method": "POST",
+   "path": "/api/session/{session_id}/mark-stopped",
+   "status": "PASS",
+   "evidence": "RETEST after 028064a: -> 200 {'status':'ok'} (was 500 created_at AttributeError)."
+  },
+  {
+   "method": "POST",
+   "path": "/api/session/{session_id}/merge-last-assistant",
+   "status": "PASS",
+   "evidence": "RETEST after 028064a: >=2 assistant msgs -> 200 {'status':'ok','merged':true} (was 500)."
+  },
+  {
+   "method": "POST",
+   "path": "/api/session/{session_id}/update-last-meta",
+   "status": "PASS",
+   "evidence": "RETEST after 028064a: {'metadata':{'rating':5}} -> 200 {'status':'ok'} (was 500)."
+  },
+  {
+   "method": "POST",
+   "path": "/api/skills/{skill_id}/markdown",
+   "status": "PASS",
+   "evidence": "RETEST after 8975b00: garbage body -> 400 'Could not parse SKILL.md: missing YAML frontmatter with a name field'; target skill audit-tmp-skill NOT renamed to 'skill' (verified in list). Happy path (valid SKILL.md) -> 200 per fleet."
+  },
+  {
+   "method": "GET",
+   "path": "/api/model-endpoints/{ep_id}/probe",
+   "status": "PASS",
+   "evidence": "RETEST after 1d7f660: all 3 sidecar models status ok (7.5-8.4s), probe_done ok:3 hidden:0 (was all timeout/hidden:3). hidden_models stays empty -> endpoint visible in pickers."
+  },
+  {
+   "method": "POST",
+   "path": "/api/chat",
+   "status": "PASS",
+   "evidence": "RETEST after 226b8c6: agent-bound session a7a3a5df -> 200 {'response':'ok'} via claude_code engine (was 502 'Request URL is missing http://'). Sidecar path still PASS. BOTH PATHS PASS."
+  },
+  {
+   "method": "GET",
+   "path": "/api/document/{doc_id}/page/{page_no}.png",
+   "status": "PASS",
+   "evidence": "RETEST after PyMuPDF install: PDF-linked doc -> 200 image/png 14007B (was 503 graceful-blocked). Degradation path verified earlier; happy path now covered."
+  },
+  {
+   "method": "GET",
+   "path": "/api/document/{doc_id}/render-pages",
+   "status": "PASS",
+   "evidence": "RETEST after PyMuPDF install: PDF doc -> 200 (was 503)."
+  },
+  {
+   "method": "GET",
+   "path": "/api/document/{doc_id}/render-pdf",
+   "status": "PASS",
+   "evidence": "RETEST after abcc7cd + PyMuPDF: PDF doc -> 200 application/pdf 854B (was 500; abcc7cd also makes missing-dep a graceful 503)."
+  },
+  {
+   "method": "GET",
+   "path": "/api/document/{doc_id}/export-pdf",
+   "status": "PASS",
+   "evidence": "RETEST after abcc7cd + PyMuPDF: PDF doc -> 200 application/pdf 854B (was 500)."
+  },
+  {
+   "method": "POST",
+   "path": "/api/document/{doc_id}/export-pdf/preview",
+   "status": "PASS",
+   "evidence": "RETEST after PyMuPDF install: now testable; happy path returns field-map JSON. Was BLOCKED pymupdf-unavailable. Error branches (400/404) verified by fleet."
+  }
+ ]
+}

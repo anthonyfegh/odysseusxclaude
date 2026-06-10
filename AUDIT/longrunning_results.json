@@ -1,0 +1,53 @@
+{
+ "results": [
+  {
+   "method": "GET",
+   "path": "/api/probe",
+   "status": "PASS",
+   "evidence": "Admin SSE: probe_start model_count 3; all 3 models status ok (4.5-4.9s); probe_done ok:3. Tiny 'Say OK' completions per model.",
+   "reason": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/sessions/auto-sort",
+   "status": "PASS",
+   "evidence": "?skip_llm=true cheap path -> 200 {status:ok, updated:0, folders:[], deleted_empty:0, deleted_throwaway:0, unfiled_remaining:0, skipped_llm:true}. (LLM full path is the same handler with folder naming; skip path exercises the deterministic cleanup.)",
+   "reason": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/documents/ai-tidy",
+   "status": "PASS",
+   "evidence": "-> 200 {deleted:0, reviewed:0, message:'All documents already reviewed'} (no unreviewed docs; documented all-reviewed branch).",
+   "reason": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/assistant/run/{task_id}",
+   "status": "PASS",
+   "evidence": "Ran safe housekeeping task 20c05170 (Research Tidy) -> 200 {started:true}; run-status -> {status:done, result_status:skipped}. Engine choice follows the task's crew (claude_code).",
+   "reason": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/model/download",
+   "status": "PASS",
+   "evidence": "{repo_id:'sshleifer/tiny-gpt2', disable_hf_transfer:true} -> 200 {ok:true, session_id:'cookbook-97ead2a9', remote:'local'} (tmux-backed detached download).",
+   "reason": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/model/serve",
+   "status": "PASS",
+   "evidence": "Binary allowlist enforced: cmd 'echo ...' -> 400 'cmd binary echo is not allowed. Must start with one of: llama-server,...,vllm'. Allowed binary {cmd:'python3 -c ...'} -> 200 {ok:true, session_id:'serve-dfce9b5d', remote:'local'}.",
+   "reason": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/document/{doc_id}/ai-fill-annotations",
+   "status": "BLOCKED",
+   "evidence": "PDF-backed doc + {instruction:...} -> 503 {detail:'No vision model available: No vision model available'} = documented quirk (d) sidecar has no vision. Graceful 503; minor: message text duplicated.",
+   "reason": "no-vision-graceful"
+  }
+ ]
+}
