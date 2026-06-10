@@ -279,7 +279,7 @@ def setup_history_routes(session_manager) -> APIRouter:
                 db_messages = (
                     db.query(DbChatMessage)
                     .filter(DbChatMessage.session_id == session_id, DbChatMessage.role == 'assistant')
-                    .order_by(DbChatMessage.created_at.desc())
+                    .order_by(DbChatMessage.timestamp.desc())
                     .first()
                 )
                 if db_messages:
@@ -334,7 +334,7 @@ def setup_history_routes(session_manager) -> APIRouter:
                 db_msg = (
                     db.query(DbChatMessage)
                     .filter(DbChatMessage.session_id == session_id, DbChatMessage.role == 'assistant')
-                    .order_by(DbChatMessage.created_at.desc())
+                    .order_by(DbChatMessage.timestamp.desc())
                     .first()
                 )
                 if db_msg:
@@ -415,7 +415,7 @@ def setup_history_routes(session_manager) -> APIRouter:
                 db_messages = (
                     db.query(DbChatMessage)
                     .filter(DbChatMessage.session_id == session_id)
-                    .order_by(DbChatMessage.created_at)
+                    .order_by(DbChatMessage.timestamp)
                     .all()
                 )
                 # Find last two assistant messages in DB
