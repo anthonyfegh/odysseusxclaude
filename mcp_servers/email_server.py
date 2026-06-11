@@ -303,6 +303,8 @@ def _resolve_folder(conn, preferred: str, role: str) -> str:
         "trash": ("\\Trash",),
         "archive": ("\\Archive", "\\All"),
         "junk": ("\\Junk",),
+        "sent": ("\\Sent",),
+        "drafts": ("\\Drafts",),
     }.get(role, ())
     for f in folders:
         decoded = f.decode() if isinstance(f, bytes) else str(f)
@@ -315,6 +317,8 @@ def _resolve_folder(conn, preferred: str, role: str) -> str:
         "trash": ("Trash", "[Gmail]/Trash", "[Google Mail]/Trash", "Bin", "Deleted Messages", "Deleted Items"),
         "archive": ("Archive", "Archives", "[Gmail]/All Mail", "[Google Mail]/All Mail"),
         "junk": ("Junk", "Spam", "[Gmail]/Spam", "[Google Mail]/Spam"),
+        "sent": ("Sent", "[Gmail]/Sent Mail", "[Google Mail]/Sent Mail", "Sent Items", "Sent Mail", "Sent Messages", "INBOX.Sent"),
+        "drafts": ("Drafts", "[Gmail]/Drafts", "[Google Mail]/Drafts", "Draft", "INBOX.Drafts"),
     }.get(role, ())
     lower_map = {n.lower(): n for n in names}
     for candidate in candidates:
@@ -331,6 +335,10 @@ def _folder_role_from_name(name: str) -> str:
         return "junk"
     if "archive" in lower or "all mail" in lower:
         return "archive"
+    if "sent" in lower:
+        return "sent"
+    if "draft" in lower:
+        return "drafts"
     return ""
 
 
@@ -409,7 +417,13 @@ def _list_emails(folder="INBOX", max_results=20, unresponded_only=False,
     account selects mailbox (None = default).
     """
     conn = _imap_connect(account)
-    select_status, _ = conn.select(folder, readonly=True)
+    # Resolve provider-specific folder names so natural names like "Sent",
+    # "Drafts", "Trash" work (Gmail's Sent is "[Gmail]/Sent Mail", not "Sent").
+    if folder and folder.upper() != "INBOX":
+        folder = _resolve_folder(conn, folder, _folder_role_from_name(folder))
+    # Quote the mailbox name so folders with spaces (e.g. "[Gmail]/Sent Mail")
+    # select correctly instead of erroring with "Could not parse command".
+    select_status, _ = conn.select(_q(folder), readonly=True)
     if select_status != "OK":
         conn.logout()
         raise ValueError(f"IMAP folder not found: {folder}")

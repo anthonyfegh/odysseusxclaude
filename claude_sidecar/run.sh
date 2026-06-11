@@ -10,6 +10,11 @@ cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 export CLAUDE_SIDECAR_PORT="${CLAUDE_SIDECAR_PORT:-8750}"
 export CLAUDE_SIDECAR_DEFAULT_MODEL="${CLAUDE_SIDECAR_DEFAULT_MODEL:-claude-sonnet-4-6}"
+# Drop WebSearch/WebFetch from the sidecar's native fallback tools so plain /
+# unbound chats (which run here, not on the agent engine) cannot browse the web.
+# Web search then only happens through an agent that has the web_search tool
+# toggled on, running on the claude_code engine. Keeps cheap chats web-free.
+export CLAUDE_SIDECAR_NATIVE_TOOLS="${CLAUDE_SIDECAR_NATIVE_TOOLS:-Read,Glob,Grep}"
 
 # Optional behaviour knobs (defaults are sensible; override only if you need to):
 #   CLAUDE_SIDECAR_NATIVE_TOOLS  Claude's own native tools enabled as a read-only

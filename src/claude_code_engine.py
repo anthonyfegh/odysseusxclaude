@@ -386,6 +386,17 @@ async def stream_claude_code_session(
     actual_session_id = session_uuid  # corrected from claude's init event if it forks
     mcp_cfg_path = _odysseus_mcp_config(owner, crew_id, workspace_root, chat_session_id)
 
+    # Enforce the agent's web-search toggle on Claude's NATIVE tools too. The
+    # Odysseus per-agent tool list only gates mcp__odysseus__* tools; without
+    # this, an agent with web search OFF could still browse via the native
+    # WebSearch/WebFetch tools. If the agent has an explicit tool list that omits
+    # web_search, also block the native web tools so "off" is real, not advisory.
+    from src.crew_service import parse_enabled_tools
+    _enabled_tools = parse_enabled_tools(getattr(crew, "enabled_tools", None))
+    _disallowed = ["Workflow", "Task", "Agent", "Skill"]
+    if _enabled_tools and "web_search" not in _enabled_tools:
+        _disallowed += ["WebSearch", "WebFetch"]
+
     argv = [
         CLAUDE_BIN, "--print",
         ("--session-id" if is_new else "--resume"), session_uuid,
@@ -400,7 +411,7 @@ async def stream_claude_code_session(
         # own tools (e.g. mcp__odysseus__trigger_research). An Odysseus agent works
         # through the Odysseus tools + plain bash/files/web — not a homegrown agent army.
         # (Odysseus's own skills are still reachable via mcp__odysseus__manage_skills.)
-        "--disallowedTools", "Workflow Task Agent Skill",
+        "--disallowedTools", " ".join(_disallowed),
         "--append-system-prompt", _awareness_prompt(crew),
         "--strict-mcp-config", "--mcp-config", mcp_cfg_path,
     ]
