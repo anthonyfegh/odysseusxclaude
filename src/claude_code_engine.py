@@ -239,6 +239,33 @@ def _odysseus_mcp_config(owner: str, crew_id: str, workspace_root: str, chat_ses
             "ODY_CHAT_SESSION_ID": chat_session_id or "",
         },
     }}}
+
+    # Also wire any admin-registered MCP servers (e.g. Google Drive) so the
+    # agent CLI can reach them. Without this, --strict-mcp-config exposes only
+    # the odysseus proxy, and connectors added via Settings > MCP are invisible
+    # to agents (they only reach the in-process web-chat path).
+    try:
+        from src.database import McpServer, SessionLocal
+        db = SessionLocal()
+        try:
+            for srv in db.query(McpServer).filter(McpServer.is_enabled == True).all():
+                if srv.transport != "stdio" or not srv.command:
+                    continue
+                base = (srv.name or srv.id or "").lower()
+                key = "".join(c if c.isalnum() else "_" for c in base).strip("_") or srv.id
+                if key in cfg["mcpServers"]:
+                    key = f"{key}_{srv.id}"
+                entry = {"command": srv.command,
+                         "args": json.loads(srv.args) if srv.args else []}
+                env = json.loads(srv.env) if srv.env else {}
+                if env:
+                    entry["env"] = env
+                cfg["mcpServers"][key] = entry
+        finally:
+            db.close()
+    except Exception:
+        pass
+
     fd, path = tempfile.mkstemp(prefix="ody_mcp_", suffix=".json")
     with os.fdopen(fd, "w") as f:
         json.dump(cfg, f)
