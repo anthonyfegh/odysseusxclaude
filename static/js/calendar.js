@@ -3135,33 +3135,6 @@ function _locHTML(loc) {
 
 // ── Open / Close ──
 
-let _wheelDebounce = 0;
-function _wheelNav(e) {
-  if (!_open) return;
-  // Don't intercept scroll inside the day-detail panel or any other inner scroll area
-  if (e.target.closest('.cal-day-detail') || e.target.closest('.cal-form')) return;
-  const body = document.getElementById('cal-body');
-  if (!body) return;
-  const now = Date.now();
-  if (now - _wheelDebounce < 300) { e.preventDefault(); return; }
-  if (Math.abs(e.deltaY) < 30) return;
-  _wheelDebounce = now;
-  e.preventDefault();
-  if (e.deltaY > 0) {
-    _slideDir = 1;
-    if (_view === 'year') _currentDate = new Date(_currentDate.getFullYear() + 1, 0, 1);
-    else if (_view === 'week') _currentDate.setDate(_currentDate.getDate() + 7);
-    else _currentDate = new Date(_currentDate.getFullYear(), _currentDate.getMonth() + 1, 1);
-  } else {
-    _slideDir = -1;
-    if (_view === 'year') _currentDate = new Date(_currentDate.getFullYear() - 1, 0, 1);
-    else if (_view === 'week') _currentDate.setDate(_currentDate.getDate() - 7);
-    else _currentDate = new Date(_currentDate.getFullYear(), _currentDate.getMonth() - 1, 1);
-  }
-  _selectedDay = null;
-  _render();
-}
-
 function openCalendar() {
   if (_open) return;
   // If currently minimized — restore in place, preserve all state
@@ -3217,7 +3190,6 @@ function openCalendar() {
     const wp = spinnerModule.createWhirlpool(28);
     wp.element.style.margin = '40px auto';
     body.querySelector('.cal-loading').appendChild(wp.element);
-    body.addEventListener('wheel', _wheelNav, { passive: false });
   }
   _fetchCalendars().then(() => _render());
 }
