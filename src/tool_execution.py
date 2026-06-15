@@ -31,7 +31,7 @@ MAX_READ_CHARS = 20_000
 # The user can cancel sooner via the chat stop button — when the
 # SSE stream is torn down, the asyncio task running the subprocess
 # gets cancelled and the subprocess is killed by the finally block.
-DEFAULT_BASH_TIMEOUT = 60 * 60     # 1 hour
+DEFAULT_BASH_TIMEOUT = 60          # 60 seconds — prevents hung bash commands from blocking the UI
 DEFAULT_PYTHON_TIMEOUT = 60 * 60
 
 # How often to push a progress event while a long-running subprocess

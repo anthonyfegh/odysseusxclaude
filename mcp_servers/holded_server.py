@@ -13,6 +13,7 @@ Tools:
     holded_list_expenses   - list expenses / purchase documents
 """
 
+import asyncio
 import os
 import sys
 from pathlib import Path
@@ -40,6 +41,10 @@ def _eur(cents) -> str:
         return f"€{float(cents)/100:,.2f}"
     except Exception:
         return str(cents)
+
+
+def _get(url, **kwargs):
+    return requests.get(url, headers=_headers(), **kwargs)
 
 
 @server.list_tools()
@@ -109,7 +114,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             params["status"] = arguments["status"]
 
         endpoint = "invoicing/v1/documents/invoice" if doc_type == "sales" else "invoicing/v1/documents/bill"
-        r = requests.get(f"{BASE_URL}/{endpoint}", headers=h, params=params, timeout=15)
+        r = await asyncio.to_thread(_get, f"{BASE_URL}/{endpoint}", params=params, timeout=15)
         r.raise_for_status()
         docs = r.json() if isinstance(r.json(), list) else r.json().get("docs", r.json().get("data", []))
         docs = docs[:limit]
@@ -129,7 +134,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         doc_type = arguments.get("type", "sales")
         invoice_id = arguments["invoice_id"]
         endpoint = "invoicing/v1/documents/invoice" if doc_type == "sales" else "invoicing/v1/documents/bill"
-        r = requests.get(f"{BASE_URL}/{endpoint}/{invoice_id}", headers=h, timeout=15)
+        r = await asyncio.to_thread(_get, f"{BASE_URL}/{endpoint}/{invoice_id}", timeout=15)
         r.raise_for_status()
         d = r.json()
 
@@ -159,7 +164,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         params = {"page": 1}
         if ctype:
             params["type"] = ctype
-        r = requests.get(f"{BASE_URL}/crm/v1/contacts", headers=h, params=params, timeout=15)
+        r = await asyncio.to_thread(_get, f"{BASE_URL}/crm/v1/contacts", params=params, timeout=15)
         r.raise_for_status()
         contacts = r.json() if isinstance(r.json(), list) else r.json().get("data", [])
         contacts = contacts[:limit]
@@ -177,7 +182,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         params = {"page": 1}
         if arguments.get("status"):
             params["status"] = arguments["status"]
-        r = requests.get(f"{BASE_URL}/invoicing/v1/documents/bill", headers=h, params=params, timeout=15)
+        r = await asyncio.to_thread(_get, f"{BASE_URL}/invoicing/v1/documents/bill", params=params, timeout=15)
         r.raise_for_status()
         docs = r.json() if isinstance(r.json(), list) else r.json().get("docs", r.json().get("data", []))
         docs = docs[:limit]

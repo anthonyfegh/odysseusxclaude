@@ -14,6 +14,7 @@ Tools:
     heygen_list_videos    - list recent generated videos with download links
 """
 
+import asyncio
 import json
 import os
 import sys
@@ -99,10 +100,17 @@ async def list_tools() -> list[Tool]:
     ]
 
 
+def _get(url, **kwargs):
+    return requests.get(url, headers=_headers(), **kwargs)
+
+def _post(url, **kwargs):
+    return requests.post(url, headers=_headers(), **kwargs)
+
+
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name == "heygen_list_avatars":
-        r = requests.get(f"{BASE_URL}/avatars", headers=_headers(), timeout=15)
+        r = await asyncio.to_thread(_get, f"{BASE_URL}/avatars", timeout=15)
         r.raise_for_status()
         avatars = r.json().get("data", {}).get("avatars", [])
         lines = [f"Available avatars ({len(avatars)}):"]
@@ -112,7 +120,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     if name == "heygen_list_voices":
         lang = arguments.get("language", "")
-        r = requests.get(f"{BASE_URL}/voices", headers=_headers(), timeout=15)
+        r = await asyncio.to_thread(_get, f"{BASE_URL}/voices", timeout=15)
         r.raise_for_status()
         voices = r.json().get("data", {}).get("voices", [])
         if lang:
@@ -142,7 +150,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             },
             "title": arguments.get("title", "Odysseus Generated Video"),
         }
-        r = requests.post(f"{BASE_URL}/video/generate", headers=_headers(), json=payload, timeout=30)
+        r = await asyncio.to_thread(_post, f"{BASE_URL}/video/generate", json=payload, timeout=30)
         r.raise_for_status()
         data = r.json().get("data", {})
         video_id = data.get("video_id", "")
@@ -150,7 +158,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     if name == "heygen_video_status":
         video_id = arguments["video_id"]
-        r = requests.get(f"{BASE_URL}/video/{video_id}", headers=_headers(), timeout=15)
+        r = await asyncio.to_thread(_get, f"{BASE_URL}/video/{video_id}", timeout=15)
         r.raise_for_status()
         data = r.json().get("data", {})
         status = data.get("status", "unknown")
@@ -164,7 +172,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     if name == "heygen_list_videos":
         limit = arguments.get("limit", 10)
-        r = requests.get(f"{BASE_URL}/videos", headers=_headers(), params={"limit": limit}, timeout=15)
+        r = await asyncio.to_thread(_get, f"{BASE_URL}/videos", params={"limit": limit}, timeout=15)
         r.raise_for_status()
         videos = r.json().get("data", {}).get("videos", [])
         lines = [f"Recent videos ({len(videos)}):"]

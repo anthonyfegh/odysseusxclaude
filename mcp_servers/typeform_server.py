@@ -12,6 +12,7 @@ Tools:
     typeform_response_summary - summarise responses from a form (counts, trends)
 """
 
+import asyncio
 import json
 import os
 import sys
@@ -74,9 +75,13 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-def _get_form_fields(form_id: str, headers: dict) -> dict:
+def _get(url, **kwargs):
+    return requests.get(url, **kwargs)
+
+
+async def _get_form_fields(form_id: str, headers: dict) -> dict:
     """Return a dict of field_id -> title for a form."""
-    r = requests.get(f"{BASE_URL}/forms/{form_id}", headers=headers, timeout=15)
+    r = await asyncio.to_thread(_get, f"{BASE_URL}/forms/{form_id}", headers=headers, timeout=15)
     r.raise_for_status()
     fields = r.json().get("fields", [])
     return {f["id"]: f.get("title", f["id"]) for f in fields}
@@ -87,7 +92,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     h = _headers()
 
     if name == "typeform_list_forms":
-        r = requests.get(f"{BASE_URL}/forms", headers=h, params={"page_size": 50}, timeout=15)
+        r = await asyncio.to_thread(_get, f"{BASE_URL}/forms", headers=h, params={"page_size": 50}, timeout=15)
         r.raise_for_status()
         forms = r.json().get("items", [])
         lines = [f"Forms ({len(forms)}):"]
@@ -102,8 +107,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if arguments.get("since"):
             params["since"] = arguments["since"]
 
-        fields = _get_form_fields(form_id, h)
-        r = requests.get(f"{BASE_URL}/forms/{form_id}/responses", headers=h, params=params, timeout=20)
+        fields = await _get_form_fields(form_id, h)
+        r = await asyncio.to_thread(_get, f"{BASE_URL}/forms/{form_id}/responses", headers=h, params=params, timeout=20)
         r.raise_for_status()
         items = r.json().get("items", [])
 
@@ -133,8 +138,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name == "typeform_response_summary":
         form_id = arguments["form_id"]
         limit = min(arguments.get("limit", 100), 1000)
-        fields = _get_form_fields(form_id, h)
-        r = requests.get(f"{BASE_URL}/forms/{form_id}/responses",
+        fields = await _get_form_fields(form_id, h)
+        r = await asyncio.to_thread(_get, f"{BASE_URL}/forms/{form_id}/responses",
             headers=h, params={"page_size": limit, "sort": "submitted_at,desc"}, timeout=20)
         r.raise_for_status()
         data = r.json()

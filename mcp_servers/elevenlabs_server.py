@@ -11,6 +11,7 @@ Tools:
     elevenlabs_tts          - convert text to speech, returns a local file path
 """
 
+import asyncio
 import json
 import os
 import sys
@@ -33,6 +34,13 @@ def _headers():
     if not key:
         raise RuntimeError("ELEVENLABS_API_KEY not set.")
     return {"xi-api-key": key}
+
+
+def _get(url, **kwargs):
+    return requests.get(url, headers=_headers(), **kwargs)
+
+def _post(url, **kwargs):
+    return requests.post(url, headers=_headers(), **kwargs)
 
 
 @server.list_tools()
@@ -71,7 +79,7 @@ async def list_tools() -> list[Tool]:
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name == "elevenlabs_list_voices":
-        r = requests.get(f"{BASE_URL}/voices", headers=_headers(), timeout=15)
+        r = await asyncio.to_thread(_get, f"{BASE_URL}/voices", timeout=15)
         r.raise_for_status()
         voices = r.json().get("voices", [])
         lines = ["Available voices:"]
@@ -90,7 +98,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             "model_id": model_id,
             "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
         }
-        r = requests.post(
+        r = await asyncio.to_thread(
+            _post,
             f"{BASE_URL}/text-to-speech/{voice_id}",
             headers={**_headers(), "Content-Type": "application/json", "Accept": "audio/mpeg"},
             json=payload,
@@ -111,7 +120,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text=f"Audio saved to: {path} ({size_kb} KB)\nCharacters used: {len(text)}")]
 
     if name == "elevenlabs_usage":
-        r = requests.get(f"{BASE_URL}/user/subscription", headers=_headers(), timeout=15)
+        r = await asyncio.to_thread(_get, f"{BASE_URL}/user/subscription", timeout=15)
         r.raise_for_status()
         sub = r.json()
         used = sub.get("character_count", 0)

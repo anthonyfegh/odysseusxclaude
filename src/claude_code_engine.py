@@ -483,12 +483,39 @@ async def stream_claude_code_session(
 
         loop = asyncio.get_event_loop()
         deadline = loop.time() + _HARD_CAP_SECONDS
+        # If claude hangs on --resume (stale session ID), we never get an init
+        # event. Kill after 30s and clear the stale ID so the next turn starts fresh.
+        _STARTUP_TIMEOUT = 30.0
+        startup_deadline = loop.time() + _STARTUP_TIMEOUT
+        got_init = False
         while True:
             if stop_event is not None and stop_event.is_set():
                 break
             try:
                 line = await asyncio.wait_for(proc.stdout.readline(), timeout=2.0)
             except asyncio.TimeoutError:
+                if not got_init and loop.time() > startup_deadline:
+                    logger.warning(
+                        f"[claude_code] no init event in {_STARTUP_TIMEOUT}s "
+                        f"(stale resume? session={actual_session_id}); killing and clearing."
+                    )
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                    # Clear the stale claude_session_id so next turn starts fresh
+                    try:
+                        from core.database import SessionLocal, Session as DbSession
+                        _db = SessionLocal()
+                        _s = _db.query(DbSession).filter(DbSession.id == chat_session_id).first()
+                        if _s:
+                            _s.claude_session_id = None
+                            _db.commit()
+                        _db.close()
+                    except Exception as _ce:
+                        logger.warning(f"[claude_code] failed to clear stale session id: {_ce}")
+                    yield _sse({"delta": "Session expired — starting fresh. Please resend your message.", "thinking": False})
+                    break
                 if loop.time() > deadline:
                     break
                 continue
@@ -501,6 +528,7 @@ async def stream_claude_code_session(
             t = ev.get("type")
 
             if t == "system" and ev.get("subtype") == "init":
+                got_init = True
                 # claude reports its REAL session id here. If it ever differs from
                 # what we asked to resume (a fork/collision), rebind the chat to the
                 # real id so future --resume keeps working. Normally a no-op.

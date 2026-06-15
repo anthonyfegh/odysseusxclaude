@@ -12,6 +12,7 @@ Tools:
     miro_search_boards - search boards by name
 """
 
+import asyncio
 import os
 import sys
 from pathlib import Path
@@ -32,6 +33,10 @@ def _headers():
     if not token:
         raise RuntimeError("MIRO_ACCESS_TOKEN not set. Create an app token at miro.com/app/settings/user-profile/apps.")
     return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+
+
+def _get(url, **kwargs):
+    return requests.get(url, headers=_headers(), **kwargs)
 
 
 @server.list_tools()
@@ -85,7 +90,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     if name == "miro_list_boards":
         limit = arguments.get("limit", 20)
-        r = requests.get(f"{BASE_URL}/boards", headers=h, params={"limit": limit, "sort": "last_modified"}, timeout=15)
+        r = await asyncio.to_thread(_get, f"{BASE_URL}/boards", params={"limit": limit, "sort": "last_modified"}, timeout=15)
         r.raise_for_status()
         boards = r.json().get("data", [])
         lines = [f"Miro boards ({len(boards)}):"]
@@ -96,7 +101,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     if name == "miro_search_boards":
         query = arguments["query"]
-        r = requests.get(f"{BASE_URL}/boards", headers=h, params={"query": query, "limit": 20}, timeout=15)
+        r = await asyncio.to_thread(_get, f"{BASE_URL}/boards", params={"query": query, "limit": 20}, timeout=15)
         r.raise_for_status()
         boards = r.json().get("data", [])
         lines = [f"Boards matching '{query}' ({len(boards)}):"]
@@ -112,7 +117,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         all_items = []
         for itype in types:
             params = {"type": itype, "limit": 50}
-            r = requests.get(f"{BASE_URL}/boards/{board_id}/items", headers=h, params=params, timeout=20)
+            r = await asyncio.to_thread(_get, f"{BASE_URL}/boards/{board_id}/items", params=params, timeout=20)
             if r.status_code == 404:
                 continue
             r.raise_for_status()

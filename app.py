@@ -790,6 +790,7 @@ async def startup_event():
     # ephemeral by design and must not survive a restart.
     try:
         from core.database import SessionLocal as _SL, Session as _DbSess, ChatMessage as _DbMsg
+        from sqlalchemy import text as _sql_text
         _db = _SL()
         try:
             _ghosts = _db.query(_DbSess).filter(_DbSess.name.in_(("Nobody", "Incognito"))).all()
@@ -799,6 +800,14 @@ async def startup_event():
             if _ghosts:
                 _db.commit()
                 logger.info(f"Purged {len(_ghosts)} leftover incognito session(s)")
+            # Clear stale claude_session_ids on every restart. These accumulate
+            # when the server is killed mid-session and cause --resume hangs.
+            _stale = _db.execute(_sql_text(
+                "UPDATE sessions SET claude_session_id = NULL WHERE claude_session_id IS NOT NULL"
+            ))
+            if _stale.rowcount:
+                _db.commit()
+                logger.info(f"Cleared {_stale.rowcount} stale claude_session_id(s) on startup")
         finally:
             _db.close()
     except Exception as e:
@@ -825,7 +834,7 @@ async def startup_event():
         except BaseException as e:
             logger.warning(f"Built-in MCP registration failed (non-critical): {type(e).__name__}: {e}")
         try:
-            await asyncio.wait_for(mcp_manager.connect_all_enabled(), timeout=20)
+            await asyncio.wait_for(mcp_manager.connect_all_enabled(), timeout=30)
         except asyncio.TimeoutError:
             logger.warning("User MCP startup timed out (non-critical)")
         except BaseException as e:

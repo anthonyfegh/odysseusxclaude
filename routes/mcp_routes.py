@@ -265,6 +265,36 @@ def setup_mcp_routes(mcp_manager: McpManager):
         finally:
             db.close()
 
+    @router.put("/servers/{server_id}/env")
+    async def update_server_env(server_id: str, request: Request, env: str = Form(...)):
+        """Update env vars (credentials) for an MCP server and reconnect."""
+        require_admin(request)
+        db = SessionLocal()
+        try:
+            srv = db.query(McpServer).filter(McpServer.id == server_id).first()
+            if not srv:
+                raise HTTPException(404, "Server not found")
+            try:
+                new_env = json.loads(env)
+            except json.JSONDecodeError:
+                raise HTTPException(400, "Invalid env JSON")
+            srv.env = json.dumps(new_env)
+            db.commit()
+            if srv.is_enabled:
+                args = json.loads(srv.args) if srv.args else []
+                await mcp_manager.connect_server(
+                    server_id=server_id,
+                    name=srv.name,
+                    transport=srv.transport,
+                    command=srv.command,
+                    args=args,
+                    env=new_env,
+                    url=srv.url,
+                )
+            return {"id": server_id, "saved": True}
+        finally:
+            db.close()
+
     @router.delete("/servers/{server_id}")
     async def delete_server(server_id: str, request: Request):
         """Remove an MCP server."""

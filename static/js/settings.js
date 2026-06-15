@@ -4189,6 +4189,21 @@ async function initUnifiedIntegrations() {
         const statusColor = srv.needs_oauth ? '#e5a33a' : srv.status === 'connected' ? 'var(--green,#50fa7b)' : srv.status === 'error' ? 'var(--red)' : 'var(--fg)';
         const toolInfo = srv.status === 'connected' ? `${srv.enabled_tool_count}/${srv.tool_count} tools` : '';
         const statusText = srv.needs_oauth ? 'Needs authorization' : srv.status === 'connected' ? `Connected (${toolInfo})` : srv.status === 'error' ? `Error: ${esc(srv.error || 'unknown')}` : 'Disconnected';
+        const envData = srv.env || {};
+        const credKeys = Object.keys(envData).filter(k => k !== 'PYTHONPATH');
+        const credHtml = credKeys.length ? `
+          <div style="margin-top:12px;border-top:1px solid rgba(128,128,128,0.2);padding-top:12px">
+            <h3 style="font-size:11px;opacity:0.6;margin:0 0 8px;text-transform:uppercase;letter-spacing:0.05em">Credentials</h3>
+            ${credKeys.map(k => `
+              <div class="settings-row" style="margin-bottom:6px">
+                <label class="settings-label" style="font-size:11px;min-width:160px">${esc(k)}</label>
+                <input class="settings-input uf-mcp-cred-input" data-key="${esc(k)}" type="text" value="${esc(envData[k])}" style="font-size:11px;font-family:monospace">
+              </div>`).join('')}
+            <div style="display:flex;gap:6px;align-items:center;margin-top:8px">
+              <button class="admin-btn-sm" id="uf-mcp-save-creds">Save &amp; reconnect</button>
+              <span id="uf-mcp-creds-msg" style="font-size:11px"></span>
+            </div>
+          </div>` : '';
         formEl.innerHTML = `
           <div class="admin-card" style="margin-top:8px">
             <h2 style="font-size:13px">${esc(srv.name)}</h2>
@@ -4203,27 +4218,52 @@ async function initUnifiedIntegrations() {
               <button class="admin-btn-sm" id="uf-mcp-cancel" style="opacity:0.7">Close</button>
               <span id="uf-mcp-msg" style="font-size:11px"></span>
             </div>
+            ${credHtml}
             <div id="uf-mcp-tools-panel"></div>
           </div>`;
         // Reconnect
-        el('uf-mcp-reconnect').addEventListener('click', async () => {
-          const msg = el('uf-mcp-msg'); msg.textContent = 'Reconnecting...';
+        formEl.querySelector('#uf-mcp-reconnect').addEventListener('click', async () => {
+          const msg = formEl.querySelector('#uf-mcp-msg'); msg.textContent = 'Reconnecting...';
           try {
             const r = await fetch(`/api/mcp/servers/${srv.id}/reconnect`, { method: 'POST', credentials: 'same-origin' });
             const d = await r.json();
             msg.textContent = d.connected ? `Connected (${d.tool_count} tools)` : `Failed: ${d.error || 'unknown'}`;
             await renderList();
-            showMcpForm(editId); // refresh this view
+            showMcpForm(editId);
           } catch (e) { msg.textContent = 'Failed'; }
         });
         // Toggle enable/disable
-        el('uf-mcp-toggle').addEventListener('click', async () => {
+        formEl.querySelector('#uf-mcp-toggle').addEventListener('click', async () => {
           const fd = new FormData(); fd.append('is_enabled', String(!srv.is_enabled));
           await fetch(`/api/mcp/servers/${srv.id}`, { method: 'PATCH', body: fd, credentials: 'same-origin' });
           await renderList();
           showMcpForm(editId);
         });
-        el('uf-mcp-cancel').addEventListener('click', () => { formEl.style.display = 'none'; });
+        formEl.querySelector('#uf-mcp-cancel').addEventListener('click', () => { formEl.style.display = 'none'; });
+        // Save credentials
+        const saveCredsBtn = formEl.querySelector('#uf-mcp-save-creds');
+        if (saveCredsBtn) {
+          saveCredsBtn.addEventListener('click', async () => {
+            const msg = formEl.querySelector('#uf-mcp-creds-msg');
+            msg.textContent = 'Saving...';
+            const inputs = formEl.querySelectorAll('.uf-mcp-cred-input');
+            const newEnv = { ...envData };
+            inputs.forEach(inp => { newEnv[inp.dataset.key] = inp.value; });
+            const fd = new FormData();
+            fd.append('env', JSON.stringify(newEnv));
+            try {
+              const r = await fetch(`/api/mcp/servers/${srv.id}/env`, { method: 'PUT', credentials: 'same-origin', body: fd });
+              if (r.ok) {
+                msg.textContent = 'Saved ✓';
+                await renderList();
+                setTimeout(() => showMcpForm(editId), 800);
+              } else {
+                const errText = await r.text().catch(() => '');
+                msg.textContent = `Failed (${r.status}${errText ? ': ' + errText.slice(0,60) : ''})`;
+              }
+            } catch (e) { msg.textContent = `Error: ${e.message}`; }
+          });
+        }
         // Load tools list
         if (srv.status === 'connected' && srv.tool_count > 0) {
           const panel = el('uf-mcp-tools-panel');
@@ -4266,35 +4306,35 @@ async function initUnifiedIntegrations() {
             <div class="settings-row" style="margin-top:4px"><button class="admin-btn-sm" id="uf-mcp-save">Save</button><button class="admin-btn-sm" id="uf-mcp-cancel" style="opacity:0.7">Cancel</button><span id="uf-mcp-msg" style="font-size:11px"></span></div>
           </div>
         </div>`;
-      el('uf-mcp-transport').addEventListener('change', () => {
-        const sse = el('uf-mcp-transport').value === 'sse';
-        el('uf-mcp-stdio-fields').style.display = sse ? 'none' : 'flex';
-        el('uf-mcp-sse-fields').style.display = sse ? 'flex' : 'none';
+      formEl.querySelector('#uf-mcp-transport').addEventListener('change', () => {
+        const sse = formEl.querySelector('#uf-mcp-transport').value === 'sse';
+        formEl.querySelector('#uf-mcp-stdio-fields').style.display = sse ? 'none' : 'flex';
+        formEl.querySelector('#uf-mcp-sse-fields').style.display = sse ? 'flex' : 'none';
       });
-      el('uf-mcp-cancel').addEventListener('click', () => { formEl.style.display = 'none'; });
-      el('uf-mcp-save').addEventListener('click', async () => {
-        const transport = el('uf-mcp-transport').value;
+      formEl.querySelector('#uf-mcp-cancel').addEventListener('click', () => { formEl.style.display = 'none'; });
+      formEl.querySelector('#uf-mcp-save').addEventListener('click', async () => {
+        const transport = formEl.querySelector('#uf-mcp-transport').value;
         // routes/mcp_routes.py uses FastAPI Form(...) — send multipart, not JSON.
         const fd = new FormData();
-        fd.append('name', el('uf-mcp-name').value);
+        fd.append('name', formEl.querySelector('#uf-mcp-name').value);
         fd.append('transport', transport);
         if (transport === 'stdio') {
-          fd.append('command', el('uf-mcp-cmd').value);
-          let args = '[]'; try { args = JSON.stringify(JSON.parse(el('uf-mcp-args').value || '[]')); } catch (_) {}
-          let env  = '{}'; try { env  = JSON.stringify(JSON.parse(el('uf-mcp-env').value  || '{}')); } catch (_) {}
+          fd.append('command', formEl.querySelector('#uf-mcp-cmd').value);
+          let args = '[]'; try { args = JSON.stringify(JSON.parse(formEl.querySelector('#uf-mcp-args').value || '[]')); } catch (_) {}
+          let env  = '{}'; try { env  = JSON.stringify(JSON.parse(formEl.querySelector('#uf-mcp-env').value  || '{}')); } catch (_) {}
           fd.append('args', args);
           fd.append('env', env);
         } else {
-          fd.append('url', el('uf-mcp-url').value);
+          fd.append('url', formEl.querySelector('#uf-mcp-url').value);
         }
         try {
           const r = await fetch('/api/mcp/servers', { method: 'POST', credentials: 'same-origin', body: fd });
           if (r.ok) {
-            el('uf-mcp-msg').textContent = 'Saved'; formEl.style.display = 'none'; await renderList();
+            formEl.querySelector('#uf-mcp-msg').textContent = 'Saved'; formEl.style.display = 'none'; await renderList();
           } else {
-            el('uf-mcp-msg').textContent = `Failed (${r.status})`;
+            formEl.querySelector('#uf-mcp-msg').textContent = `Failed (${r.status})`;
           }
-        } catch (_) { el('uf-mcp-msg').textContent = 'Failed'; }
+        } catch (_) { formEl.querySelector('#uf-mcp-msg').textContent = 'Failed'; }
       });
     }
   }
