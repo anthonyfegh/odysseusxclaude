@@ -29,6 +29,10 @@ RUN mkdir -p data logs
 COPY docker/start-course.sh /usr/local/bin/start-course.sh
 RUN chmod +x /usr/local/bin/start-course.sh
 
+# Course-support system prompt for the in-container Claude Code (the student
+# "fix-it assistant"). Lands at /app/CLAUDE.md, read by Claude Code in /app.
+COPY CLAUDE.course.md /app/CLAUDE.md
+
 EXPOSE 7860
 
 CMD ["/usr/local/bin/start-course.sh"]

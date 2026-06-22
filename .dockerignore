@@ -20,6 +20,8 @@ build/
 dev-docs/
 docs/
 *.md
+# ...but the course image needs this one explicit doc (COPY CLAUDE.course.md).
+!CLAUDE.course.md
 *.db
 *.sqlite
 *.sqlite3
@@ -40,3 +42,12 @@ timetree*.png
 *_calendar_view.png
 .gitignore
 claude-auth/
+
+# Never ship internal/runtime artifacts to a distributed student image.
+# (Note: plain *.log / *.error.log above are root-only in .dockerignore, so the
+# recursive ** forms below are what actually catch src/cache, subdir logs, etc.)
+AUDIT/
+src/cache/
+**/*.cache
+**/*.log
+**/*.error.log
