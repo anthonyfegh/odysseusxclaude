@@ -431,7 +431,10 @@ async def stream_claude_code_session(
         "--output-format", "stream-json",
         "--include-partial-messages", "--verbose",
         "--model", model,
-        "--permission-mode", "bypassPermissions",
+        # Headless agent: auto-approve all tool use (no interactive prompt to answer).
+        # Paired with IS_SANDBOX=1 below so this is allowed even when claude runs as
+        # root inside the course Docker container.
+        "--dangerously-skip-permissions",
         # Block the host's multi-agent orchestration + skill machinery so an Odysseus
         # agent can't spin up its OWN deep research (Workflow / Task / Agent subagents)
         # or invoke host "superpowers"/deep-research skills instead of using Odysseus's
@@ -465,7 +468,12 @@ async def stream_claude_code_session(
     # it must be a *falsy* string ("0") — counter-intuitively "true"/"1" KEEPS the
     # detour on. (Decoded from claude v2.1.168's mode resolver sb8() + verified by
     # running the real CLI against a 30-tool MCP server: "0" -> 0 ToolSearch calls.)
-    _env = {**os.environ, "ENABLE_TOOL_SEARCH": "0"}
+    # IS_SANDBOX=1 lets --dangerously-skip-permissions run when the host is root
+    # (e.g. inside the course Docker container). Without it, claude refuses the flag
+    # as root ("cannot be used with root/sudo") and exits immediately, so the chat
+    # hangs at "thinking" with no answer. The engine runs claude fully autonomously
+    # (headless --print), so skipping the interactive permission prompt is required.
+    _env = {**os.environ, "ENABLE_TOOL_SEARCH": "0", "IS_SANDBOX": "1"}
     try:
         proc = await asyncio.create_subprocess_exec(
             *argv, cwd=workspace_root, env=_env,
