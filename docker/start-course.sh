@@ -4,6 +4,12 @@ set -e
 
 cd /app
 
+# This image runs uvicorn on 7860 (below), so point the agent's app_api loopback
+# at 7860. Without this it falls back to the stale :7000 default and app_api fails
+# with "OpenAPI fetch failed: All connection attempts failed".
+export ODYSSEUS_INTERNAL_BASE="http://127.0.0.1:7860"
+export ODYSSEUS_PORT="7860"
+
 echo "================================================"
 echo "  Odysseus Course Environment"
 echo "================================================"
