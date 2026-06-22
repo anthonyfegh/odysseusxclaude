@@ -1,0 +1,15 @@
+services:
+  odysseus:
+    container_name: odysseus-course
+    image: oliviolabs/odysseus-course:latest
+    ports:
+      - "7860:7860"
+    volumes:
+      # Your data - agents, memory, tasks, and connector credentials
+      - ./data:/app/data
+      - ./logs:/app/logs
+      # Claude login - persists between restarts after first login
+      - ./claude-auth:/root/.claude
+    env_file:
+      - .env
+    restart: unless-stopped

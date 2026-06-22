@@ -5,6 +5,7 @@ Manages connections to MCP (Model Context Protocol) tool servers.
 Each server exposes tools that are made available to the agent loop.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -25,6 +26,8 @@ class McpManager:
         self._sessions: Dict[str, Any] = {}
         # server_id -> exit stack (for cleanup)
         self._stacks: Dict[str, Any] = {}
+        # incremented on every connect/disconnect so tool_index knows to re-index
+        self._generation: int = 0
 
     async def connect_server(
         self,
@@ -102,6 +105,7 @@ class McpManager:
             }
 
             logger.info(f"MCP server connected: {name} ({server_id}) - {len(tools)} tools via stdio")
+            self._generation += 1
             return True
 
         except ImportError:
@@ -144,6 +148,7 @@ class McpManager:
             }
 
             logger.info(f"MCP server connected: {name} ({server_id}) - {len(tools)} tools via SSE")
+            self._generation += 1
             return True
 
         except ImportError:
@@ -163,6 +168,7 @@ class McpManager:
         self._sessions.pop(server_id, None)
         self._tools.pop(server_id, None)
         self._connections.pop(server_id, None)
+        self._generation += 1
         logger.info(f"MCP server disconnected: {server_id}")
 
     async def disconnect_all(self):
@@ -172,26 +178,34 @@ class McpManager:
             await self.disconnect_server(sid)
 
     async def connect_all_enabled(self):
-        """Connect to all enabled MCP servers from the database."""
+        """Connect to all enabled MCP servers from the database in parallel."""
         from src.database import McpServer, SessionLocal
 
         db = SessionLocal()
         try:
             servers = db.query(McpServer).filter(McpServer.is_enabled == True).all()
-            for srv in servers:
-                args = json.loads(srv.args) if srv.args else []
-                env = json.loads(srv.env) if srv.env else {}
-                await self.connect_server(
-                    server_id=srv.id,
-                    name=srv.name,
-                    transport=srv.transport,
-                    command=srv.command,
-                    args=args,
-                    env=env,
-                    url=srv.url,
-                )
+            server_configs = [
+                {
+                    "server_id": srv.id,
+                    "name": srv.name,
+                    "transport": srv.transport,
+                    "command": srv.command,
+                    "args": json.loads(srv.args) if srv.args else [],
+                    "env": json.loads(srv.env) if srv.env else {},
+                    "url": srv.url,
+                }
+                for srv in servers
+            ]
         finally:
             db.close()
+
+        async def _connect_one(cfg):
+            try:
+                await self.connect_server(**cfg)
+            except Exception as e:
+                logger.warning(f"MCP startup failed for {cfg['name']}: {e}")
+
+        await asyncio.gather(*[_connect_one(cfg) for cfg in server_configs])
 
     async def call_tool(self, qualified_name: str, arguments: Dict) -> Dict:
         """Call an MCP tool by its qualified name (mcp__{server_id}__{tool_name}).

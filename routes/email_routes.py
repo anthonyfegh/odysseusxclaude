@@ -173,6 +173,8 @@ def _resolve_mail_folder(conn, preferred: str, role: str = "") -> str:
         "trash": ("\\Trash",),
         "archive": ("\\Archive", "\\All"),
         "junk": ("\\Junk",),
+        "sent": ("\\Sent",),
+        "drafts": ("\\Drafts",),
     }.get(role, ())
     for f in folders:
         decoded = f.decode() if isinstance(f, bytes) else str(f)
@@ -184,6 +186,8 @@ def _resolve_mail_folder(conn, preferred: str, role: str = "") -> str:
         "trash": ("Trash", "[Gmail]/Trash", "[Google Mail]/Trash", "Bin", "[Gmail]/Bin", "Deleted Messages", "Deleted Items"),
         "archive": ("Archive", "Archives", "[Gmail]/All Mail", "[Google Mail]/All Mail", "All Mail"),
         "junk": ("Junk", "Spam", "[Gmail]/Spam", "[Google Mail]/Spam"),
+        "sent": ("Sent", "[Gmail]/Sent Mail", "[Google Mail]/Sent Mail", "Sent Items", "Sent Mail", "Sent Messages"),
+        "drafts": ("Drafts", "[Gmail]/Drafts", "[Google Mail]/Drafts", "Draft"),
     }.get(role, ())
     lower_map = {n.lower(): n for n in names}
     for candidate in candidates:
@@ -201,6 +205,10 @@ def _folder_role_from_name(name: str) -> str:
         return "junk"
     if "archive" in lower or "all mail" in lower:
         return "archive"
+    if "sent" in lower:
+        return "sent"
+    if "draft" in lower:
+        return "drafts"
     return ""
 
 
@@ -593,6 +601,11 @@ def setup_email_routes():
         """
         try:
             conn = _imap_connect(account_id, owner=owner)
+            # Resolve provider-specific folder names (e.g. Gmail's Sent is
+            # "[Gmail]/Sent Mail", not "Sent") so natural names like "Sent" /
+            # "Drafts" / "Trash" work instead of failing as NONEXISTENT.
+            if folder and folder.upper() != "INBOX":
+                folder = _resolve_mail_folder(conn, folder, _folder_role_from_name(folder))
             select_status, _ = conn.select(_q(folder), readonly=True)
             if select_status != "OK":
                 conn.logout()

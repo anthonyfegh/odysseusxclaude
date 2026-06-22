@@ -1,0 +1,18 @@
+services:
+  odysseus:
+    container_name: odysseus-course
+    build:
+      context: .
+      dockerfile: Dockerfile.course
+    ports:
+      - "7860:7860"
+    volumes:
+      # Persistent data (agents, memory, tasks, connector credentials)
+      - ./data:/app/data
+      - ./logs:/app/logs
+      # Claude auth - persists login between restarts
+      # First time: run 'docker exec -it odysseus-course claude auth login'
+      - ./claude-auth:/root/.claude
+    env_file:
+      - .env
+    restart: unless-stopped

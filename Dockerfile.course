@@ -1,0 +1,34 @@
+FROM python:3.12-slim
+
+# System deps: Node.js for Claude Code, build tools for Python packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    nodejs \
+    npm \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Claude Code CLI globally so it is on PATH for all users
+RUN npm install -g @anthropic-ai/claude-code
+
+WORKDIR /app
+
+# Install Python deps into a venv (matches the path run.sh expects)
+COPY requirements.txt .
+RUN python -m venv venv && \
+    ./venv/bin/pip install --no-cache-dir --upgrade pip && \
+    ./venv/bin/pip install --no-cache-dir -r requirements.txt
+
+# Copy application code (.dockerignore excludes data/, logs/, venv/, .env)
+COPY . .
+
+# Directories that need to exist but are excluded from the build context
+RUN mkdir -p data logs
+
+COPY docker/start-course.sh /usr/local/bin/start-course.sh
+RUN chmod +x /usr/local/bin/start-course.sh
+
+EXPOSE 7860
+
+CMD ["/usr/local/bin/start-course.sh"]
