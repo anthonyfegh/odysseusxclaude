@@ -1,7 +1,7 @@
 services:
   odysseus:
     container_name: odysseus-course
-    image: oliviolabs/odysseus-course:latest
+    image: anthonydocker123/odysseus-course:latest
     ports:
       - "7860:7860"
     volumes:
@@ -10,6 +10,6 @@ services:
       - ./logs:/app/logs
       # Claude login - persists between restarts after first login
       - ./claude-auth:/root/.claude
-    env_file:
-      - .env
+    # No env_file: auth is the subscription via the claude-auth mount; we don't
+    # pass .env so there's no ANTHROPIC_API_KEY path (subscription-only).
     restart: unless-stopped
