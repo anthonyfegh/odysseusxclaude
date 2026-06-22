@@ -16,7 +16,10 @@ if ! claude --version >/dev/null 2>&1; then
     exit 1
 fi
 
-if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ ! -f /root/.claude/.credentials.json ]; then
+# Subscription-only: authenticate via `claude auth login` (writes the
+# credentials file). We deliberately do NOT accept ANTHROPIC_API_KEY here —
+# Odysseus must stay on the Claude subscription, never pay-as-you-go API.
+if [ ! -f /root/.claude/.credentials.json ]; then
     echo ""
     echo "ERROR: Claude is not authenticated."
     echo "Run this once in a separate terminal to log in:"

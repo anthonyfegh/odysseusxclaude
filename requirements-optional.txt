@@ -15,3 +15,10 @@ duckduckgo-search
 # network-served app — see ACKNOWLEDGMENTS.md. The MIT core (PDF *text*
 # extraction via pypdf) works without it; this only unlocks form-filling.
 PyMuPDF
+
+# Google connectors (Drive / Sheets / Slides MCP servers).
+# Install if you add any of the gdrive/gsheets/gslides MCP servers. Without
+# these the connectors degrade gracefully ("… not connected: No module named
+# googleapiclient") rather than crashing — nothing else depends on them.
+google-api-python-client
+google-auth
