@@ -33,6 +33,14 @@ RUN chmod +x /usr/local/bin/start-course.sh
 # "fix-it assistant"). Lands at /app/CLAUDE.md, read by Claude Code in /app.
 COPY CLAUDE.course.md /app/CLAUDE.md
 
+# Consolidate ALL of Claude's state (tokens, account, onboarding, sessions) into
+# /root/.claude — which docker-compose bind-mounts to ./claude-auth. By default
+# claude splits state between ~/.claude (mounted) and ~/.claude.json (NOT mounted),
+# so a `docker compose down && up` lost the login. As an ENV (not just a shell
+# export) this also reaches the student's `docker exec … claude auth login`, so the
+# first login writes everything into the mount and persists across recreation.
+ENV CLAUDE_CONFIG_DIR=/root/.claude
+
 EXPOSE 7860
 
 CMD ["/usr/local/bin/start-course.sh"]
