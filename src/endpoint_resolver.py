@@ -237,9 +237,9 @@ def resolve_endpoint(
         headers = build_headers(ep.api_key, base)
 
         # If no model specified, try to pick the first from endpoint's cached list
-        if not model and hasattr(ep, 'models') and ep.models:
+        if not model and getattr(ep, 'cached_models', None):
             try:
-                models = json.loads(ep.models) if isinstance(ep.models, str) else ep.models
+                models = json.loads(ep.cached_models) if isinstance(ep.cached_models, str) else ep.cached_models
                 if models:
                     model = _first_chat_model(models)
             except Exception:
@@ -275,9 +275,9 @@ def resolve_endpoint_by_id(
         chat_url = build_chat_url(base)
         headers = build_headers(ep.api_key, base)
         m = (model or "").strip()
-        if not m and getattr(ep, "models", None):
+        if not m and getattr(ep, "cached_models", None):
             try:
-                models = json.loads(ep.models) if isinstance(ep.models, str) else ep.models
+                models = json.loads(ep.cached_models) if isinstance(ep.cached_models, str) else ep.cached_models
                 if models:
                     m = _first_chat_model(models) or ""
             except Exception:

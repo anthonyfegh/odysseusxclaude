@@ -335,7 +335,15 @@ def setup_memory_routes(memory_manager: MemoryManager, session_manager: SessionM
                  raise HTTPException(404, "Session not found — needed for LLM config")
         else:
             endpoint_url, model, headers = resolve_endpoint("utility", owner=_owner(request))
-    
+
+        # Fallback: if no utility model is configured, use the built-in Claude
+        # sidecar directly so the brain/memory upload works out of the box.
+        if not endpoint_url or not model:
+            from src.endpoint_resolver import resolve_endpoint_by_id
+            _fb = resolve_endpoint_by_id("claude-cli-sidecar", "claude-sonnet-4-6")
+            if _fb:
+                endpoint_url, model, headers = _fb
+
         if not endpoint_url or not model:
             raise HTTPException(400, "No LLM model configured. Set a default model in Settings.")
 

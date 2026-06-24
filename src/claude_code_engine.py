@@ -496,6 +496,7 @@ async def stream_claude_code_session(
         _STARTUP_TIMEOUT = 30.0
         startup_deadline = loop.time() + _STARTUP_TIMEOUT
         got_init = False
+        produced_output = False  # did claude emit ANY text/thinking/tool/result?
         while True:
             if stop_event is not None and stop_event.is_set():
                 break
@@ -567,6 +568,7 @@ async def stream_claude_code_session(
                             yield _sse({"type": "agent_step", "round": round_num})
                             tool_pending_step = False
                         started_step = True
+                        produced_output = True
                         yield _sse({"delta": txt, "thinking": True} if thinking
                                    else {"delta": txt})
                 continue
@@ -584,6 +586,7 @@ async def stream_claude_code_session(
                     nm = b.get("name") or "tool"
                     tool_names[b.get("id")] = nm
                     started_step = True
+                    produced_output = True
                     yield _sse({"type": "tool_start", "tool": _tool_label(nm),
                                 "command": _stringify_input(nm, b.get("input")),
                                 "round": round_num,
@@ -614,6 +617,36 @@ async def stream_claude_code_session(
                 await asyncio.wait_for(proc.wait(), timeout=5.0)
             except Exception:
                 pass
+
+        # Fail-fast: claude exited producing NO output AND NO result (e.g. a broken/
+        # corrupt binary that crashes on spawn, or an immediate non-zero exit). Surface
+        # a VISIBLE error + clear the bound session so the next turn starts fresh —
+        # instead of leaving the chat stuck on "thinking" forever with an empty bubble.
+        if last_result is None and not produced_output and (stop_event is None or not stop_event.is_set()):
+            rc = getattr(proc, "returncode", None) if proc is not None else None
+            err_tail = ""
+            try:
+                if proc is not None and proc.stderr is not None:
+                    raw = await asyncio.wait_for(proc.stderr.read(), timeout=2.0)
+                    err_tail = (raw or b"")[-500:].decode("utf-8", "replace").strip()
+            except Exception:
+                pass
+            logger.warning(f"[claude_code] claude exited rc={rc} with no output; stderr: {err_tail[:300]}")
+            try:
+                from core.database import SessionLocal, Session as DbSession
+                _db = SessionLocal()
+                _s = _db.query(DbSession).filter(DbSession.id == chat_session_id).first()
+                if _s:
+                    _s.claude_session_id = None
+                    _db.commit()
+                _db.close()
+            except Exception:
+                pass
+            msg = f"The agent could not start (claude exited {rc})."
+            if err_tail:
+                msg += f"\n{err_tail}"
+            msg += "\nPlease try sending your message again."
+            yield _sse({"delta": msg, "thinking": False})
 
         usage = (last_result or {}).get("usage") or {}
         yield _sse({"type": "metrics", "data": {

@@ -10,6 +10,12 @@ cd /app
 export ODYSSEUS_INTERNAL_BASE="http://127.0.0.1:7860"
 export ODYSSEUS_PORT="7860"
 
+# Belt-and-suspenders with the image ENV: block Claude's auto-updater at runtime
+# so a failed background self-update can never corrupt the pinned binary that
+# powers the sidecar + claude_code engine.
+export DISABLE_UPDATES=1
+export DISABLE_AUTOUPDATER=1
+
 echo "================================================"
 echo "  Odysseus Course Environment"
 echo "================================================"
@@ -77,6 +83,29 @@ try:
 except Exception as e:
     print(f"  Warning: could not seed model endpoint: {e}")
 
+# Seed default + utility model settings so resolve_endpoint('default'/'utility')
+# works out of the box — without this, memory import (the "brain" upload) and
+# every utility feature (email/notes/tasks summarization, research) return an
+# internal error because no model is resolvable. They ship as empty strings, so
+# treat empty/falsy as unset and never clobber a value an admin has set.
+try:
+    from src.settings import load_settings, save_settings
+    _s = load_settings()
+    _seed = {
+        "default_endpoint_id": "claude-cli-sidecar",
+        "default_model": "claude-opus-4-8",
+        "utility_endpoint_id": "claude-cli-sidecar",
+        "utility_model": "claude-sonnet-4-6",
+    }
+    if any(not _s.get(k) for k in _seed):
+        for k, v in _seed.items():
+            if not _s.get(k):
+                _s[k] = v
+        save_settings(_s)
+        print("  Default + utility model settings seeded.")
+except Exception as e:
+    print(f"  Warning: could not seed model settings: {e}")
+
 # Create default student login on first run (only if auth.json doesn't exist yet)
 auth_path = '/app/data/auth.json'
 if not os.path.exists(auth_path):
@@ -112,6 +141,27 @@ if not os.path.exists(auth_path):
 else:
     print("  Account already exists — skipping default user seed.")
 PYEOF
+
+# --- ChromaDB vector server -------------------------------------------------
+# Powers tool-selection (so connector tools like Drive are offered to the agent),
+# semantic memory, and document RAG / the "brain". The image now ships the full
+# `chromadb` (server + CLI), not the http-only client, so run its server locally
+# on loopback. Data persists on the mounted /app/data so it survives restarts.
+export CHROMADB_HOST=127.0.0.1
+export CHROMADB_PORT=8100
+export ANONYMIZED_TELEMETRY=False
+mkdir -p /app/data/chromadb
+if ! curl -sf http://127.0.0.1:8100/api/v2/heartbeat >/dev/null 2>&1; then
+    echo "Starting ChromaDB on 127.0.0.1:8100 ..."
+    ./venv/bin/chroma run --path /app/data/chromadb --host 127.0.0.1 --port 8100 \
+        >/app/logs/chromadb.log 2>&1 &
+    # Wait (up to ~30s) for the heartbeat so the app's startup probe sees it
+    # healthy from the first request (the app also lazy-retries every 30s).
+    for i in $(seq 1 30); do
+        curl -sf http://127.0.0.1:8100/api/v2/heartbeat >/dev/null 2>&1 && break
+        sleep 1
+    done
+fi
 
 # Start the sidecar in background (run.sh has its own restart loop)
 echo "Starting Claude sidecar on port 8750..."

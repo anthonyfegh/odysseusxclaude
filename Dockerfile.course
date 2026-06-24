@@ -9,8 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     npm \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code CLI globally so it is on PATH for all users
-RUN npm install -g @anthropic-ai/claude-code
+# Install Claude Code CLI globally so it is on PATH for all users.
+# PINNED so the image is reproducible and the auto-updater (disabled below) can
+# never drift/corrupt the binary that powers the sidecar + claude_code engine.
+RUN npm install -g @anthropic-ai/claude-code@2.1.185
 
 WORKDIR /app
 
@@ -18,7 +20,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN python -m venv venv && \
     ./venv/bin/pip install --no-cache-dir --upgrade pip && \
-    ./venv/bin/pip install --no-cache-dir -r requirements.txt
+    ./venv/bin/pip install --no-cache-dir -r requirements.txt && \
+    ./venv/bin/pip install --no-cache-dir google-api-python-client google-auth
 
 # Copy application code (.dockerignore excludes data/, logs/, venv/, .env)
 COPY . .
@@ -40,6 +43,15 @@ COPY CLAUDE.course.md /app/CLAUDE.md
 # export) this also reaches the student's `docker exec … claude auth login`, so the
 # first login writes everything into the mount and persists across recreation.
 ENV CLAUDE_CONFIG_DIR=/root/.claude
+
+# Block Claude Code's auto-updater so a failed background self-update can never
+# corrupt the (pinned) binary that powers the sidecar + claude_code engine — the
+# exact failure Kate's class hit ("Processing" forever / Internal Server Error).
+# DISABLE_UPDATES is the strict switch (also blocks a manual `claude update`);
+# both claude subprocesses and the student's `docker exec … claude` inherit it.
+# Claude is now updated only by rebuilding the image (bump the pin on line 13).
+ENV DISABLE_UPDATES=1
+ENV DISABLE_AUTOUPDATER=1
 
 EXPOSE 7860
 
