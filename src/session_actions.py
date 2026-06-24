@@ -38,12 +38,14 @@ async def run_auto_sort(owner: str, skip_llm: bool = False) -> str:
     from core.database import SessionLocal, Session as DbSession, ChatMessage as DbMsg
     from src.llm_core import llm_call_async
     from src.task_endpoint import resolve_task_endpoint
+    from datetime import datetime, timedelta
 
     db = SessionLocal()
     try:
         # ── Phase 1: Delete empty/throwaway sessions ──
         deleted_empty = 0
         deleted_throwaway = 0
+        deleted_ids = []
 
         rows = db.query(DbSession).filter(
             DbSession.archived == False,
@@ -55,6 +57,7 @@ async def run_auto_sort(owner: str, skip_llm: bool = False) -> str:
                 continue
             if (row.name or "").strip() == "Incognito":
                 deleted_throwaway += 1
+                deleted_ids.append(row.id)
                 db.delete(row)
                 continue
 
@@ -64,6 +67,12 @@ async def run_auto_sort(owner: str, skip_llm: bool = False) -> str:
             should_delete = False
 
             if msg_count == 0:
+                # Don't delete a just-opened/active empty chat out from under the
+                # user — auto-sort fires every 5th new session. Only clean up empties
+                # that have been idle for a while.
+                la = getattr(row, "last_accessed", None)
+                if la and (datetime.utcnow() - la) < timedelta(minutes=60):
+                    continue
                 should_delete = True
                 deleted_empty += 1
             elif msg_count <= _THROWAWAY_MAX_MESSAGES:
@@ -97,11 +106,22 @@ async def run_auto_sort(owner: str, skip_llm: bool = False) -> str:
                         deleted_throwaway += 1
 
             if should_delete:
+                deleted_ids.append(row.id)
                 db.delete(row)
 
         if deleted_empty or deleted_throwaway:
             db.commit()
             logger.info(f"Auto-sort: deleted {deleted_empty} empty + {deleted_throwaway} throwaway sessions")
+            # Evict the deleted sessions from the in-memory cache too, or they become
+            # ghosts: still listed via session_manager but 404 on every DB-checked op.
+            try:
+                from src.ai_interaction import get_session_manager
+                sm = get_session_manager()
+                if sm is not None:
+                    for _sid in deleted_ids:
+                        sm.sessions.pop(_sid, None)
+            except Exception:
+                pass
 
         # ── Phase 2: AI folder assignment ──
         remaining = db.query(DbSession).filter(

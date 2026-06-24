@@ -1099,7 +1099,6 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
         """
         import base64
         import json
-        import fitz
         from src.pdf_form_doc import find_source_upload_id
         from src.constants import UPLOAD_DIR
         from src.document_processor import _resolve_vl_model, _load_vl_settings
@@ -1109,6 +1108,11 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
         instruction = (body or {}).get("instruction", "").strip()
         if not instruction:
             raise HTTPException(400, "instruction is required")
+
+        try:
+            import fitz  # PyMuPDF — optional (AGPL), not bundled in every build
+        except ImportError:
+            raise HTTPException(503, "PDF form-filling needs PyMuPDF, which isn't installed in this build.")
 
         user = get_current_user(request)
         db = SessionLocal()
